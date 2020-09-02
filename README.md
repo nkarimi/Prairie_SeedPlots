@@ -3,4 +3,3 @@
 Scripts for manuscript:
 "Early establishment of seeds, plugs, and plant communities in a biodiversity restoration experiment"
 
-by Becky Barak and Nisa Karimi
