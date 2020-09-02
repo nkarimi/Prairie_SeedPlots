@@ -1,0 +1,365 @@
+---
+title: "mvGLM"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(vegan)
+library(data.table)
+library(dplyr)
+library(reshape)
+library(reshape2) #melt is masked from data.table
+library(tibble)
+library(ggplot2)
+library(ape)
+library(MCMCglmm)
+library(picante)
+library(tidyr)
+library(geiger)
+library(modelsummary)
+library(gt)
+library(remotes)
+```
+
+##MCMC Generalized Linear Mixed-Effects Models (GLMM)  
+
+```{r load and format data}
+#df.pa.seed from 00c.phyD.SR.boxplots
+block <- read.delim("../DATA/plots.blocking.v4.2016-08-03.tsv")
+block <- subset(block, select=c(PLOT, block_BS.mod))
+
+phy <- read.tree(file="../DATA/phylogeny.analyzed.2016-01-05b.tre")
+phy$tip.label[which(phy$tip.label == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+phy.tre <- drop.tip(phy, which(!phy$tip.label %in% names(subset(df.pa.seed.glm, select = Agalinis_tenuifolia:Zizia_aurea)))) 
+
+#run 04a.MakeSiteSpTree.Rmd for t2
+t2$node.label <- paste("node", 1:2147, sep="")
+phy.tre.ul <- chronopl(t2, lambda=1, age.min = 1, age.max = NULL)
+inv.phylo <-inverseA(phy.tre.ul, nodes="ALL", scale=TRUE)
+```
+
+# TRAITS
+```{r}
+#################### load FULL traits matrix
+#traits <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+#setDT(traits, keep.rownames = "Species")[]
+#traits$Species <- gsub("Symphyotrichum_novae-angliae", "Symphyotrichum_novae.angliae", traits$Species)
+
+##################load MICE traits:
+MICEtraits <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+setDT(MICEtraits, keep.rownames = "Species")[]
+#drop traits:
+MICEtraits.drp <- subset(MICEtraits, select = -c(lifeCycleCoded, floweringStartcoded, habitClean, genome_Use, Lifeform, bulbs, corms, primary, stolons) )
+
+MICEtraits.drp$Species <- gsub("Symphyotrichum_novae-angliae", "Symphyotrichum_novae.angliae" , MICEtraits.drp$Species)
+##Filter to only species in 2017 and 2018 cover (dropping spring = 105 species vs as.planted has 127 species
+MICEtraits.drp <- MICEtraits.drp %>% filter (Species %in% names(subset(df.pa.seed.glm, select = Agalinis_tenuifolia:Zizia_aurea)))
+MICEtraits.drp$Species -> rownames(MICEtraits.drp)
+MICEtraits.drp2 <- MICEtraits.drp
+
+###Test for correlations https://rdrr.io/cran/ape/man/corphylo.html
+#collinearity between the explanatory variables
+library(GGally)
+ggpairs(MICEtraits.drp2[2:13])
+```
+
+#COVER DATA
+```{r}
+seed2017 <- read.csv("../DATA/2017_VegetationCover/COVER.sppCovMat2017.SEED.csv")
+plug2017 <-  read.csv("../DATA/PlugPlots/COVER.sppCovMat2017.PLUG.csv")
+max <- read.csv("../DATA/2018_VegetationCover/COVER.sppCovMat.2018.MAX.csv")
+max2 <- read.csv("../DATA/2019_VegetationCover/COVER.sppCovMat.2019.MAX.csv")
+df.cover.na <- rbind(seed2017, plug2017,max, max2)
+
+########LOAD SEED DATA: df.cover.na from load.and.format
+df.cover.na.glm <- merge(df.cover.na, block, by.x="plot", by.y="PLOT")
+df.cover.na.glm <- subset(df.cover.na.glm, select=-c(Code))
+df.cover.na.glm.long <- reshape2::melt(df.cover.na.glm,  id.vars = c("year", "plot", "type", "block_BS.mod"), variable.name = "Species") 
+
+df.cover.na.glm.long2 <- df.cover.na.glm.long %>% drop_na() #drop NA rows
+df.cover.na.glm.long.trait <- merge(df.cover.na.glm.long2, MICEtraits.drp2, by='Species')
+df.cover.na.glm.long.trait <- df.cover.na.glm.long.trait[order(df.cover.na.glm.long.trait$plot),]
+paste(df.cover.na.glm.long.trait$plot, df.cover.na.glm.long.trait$Species,sep="-") ->  df.cover.na.glm.long.trait$Species.new #Add phylogeny 
+df.cover.na.glm.long.trait$plot <- as.factor(df.cover.na.glm.long.trait$plot)
+#split(df.cover.na.glm.long.trait, df.cover.na.glm.long.trait$type) -> df.cover.na.glm.long.trait
+df.cover.na.glm.long.trait$value <- as.numeric(df.cover.na.glm.long.trait$value)
+#ADD PHYLO
+#phy.tre.ul.p <- drop.tip(phy.tre.ul, which(!phy.tre.ul$tip.label %in% df.cover.na.glm.long.trait$Seed$Species.new))
+inv.phylop <-inverseA(phy.tre.ul, nodes="ALL", scale=TRUE)
+
+##DROP SPECIES KEEPING ONLY ONE THAT SIGNIFICANTLY DIFFERED IN COVER:
+#to.keep from 02b.
+#df <- df.cover.na.glm.long.trait %>%
+      dplyr::filter(df.cover.na.glm.long.trait$Species %in% to.keep )
+```
+
+```{r}      
+model.traits <- MCMCglmm(value ~ year + type:seedMass + type:LDMC + type:SLA + type:LNC + type:LCC + type:LPC + type:SDMC + type:circularity + type:vegetativeHeight + type:leafLength + type:leafThickness + type:leafWidth + type:photosyntheticPathway + type:rhizomes + type:fibrous + type:nFixer + type:wis_IL, random=~plot + block_BS.mod, data=df, nitt = 200000, thin=200, burnin=20000)
+summary(model.traits) -> Smodel.traits
+
+model.traits.phy <- MCMCglmm(value ~ year + type:seedMass + type:LDMC + type:SLA + type:LNC + type:LCC + type:LPC + type:SDMC + type:circularity + type:vegetativeHeight + type:leafLength + type:leafThickness + type:leafWidth + type:photosyntheticPathway + type:rhizomes + type:fibrous + type:nFixer, random=~plot + block_BS.mod + Species.new, ginverse= list(Species.new=inv.phylop$Ainv), data=df, nitt = 200000, thin=200, burnin=20000)
+summary(model.traits.phy) -> Smodel.traits.phy
+
+#same model with scaled effects:
+#Rescale the fixed effects to mean 0 and unit variance: 
+Scaled.df <- df
+cols <- c("seedMass",  "LDMC",   "SLA",  "LNC",   "LCC",  "LPC",  "SDMC", "circularity", "vegetativeHeight", "leafLength", "leafThickness", "leafWidth", "petioleLength")
+
+Scaled.df2 <- Scaled.df %>%
+  mutate_if(names(.) %in% cols, funs(c(scale(.))))
+
+#make sure plot = factor and year too
+as.factor(Scaled.df2$plot) -> Scaled.df2$plot
+as.numeric(Scaled.df2$value) -> Scaled.df2$value
+as.numeric(Scaled.df2$value) -> Scaled.df2$value
+Scaled.df2$wis_IL <- as.factor(Scaled.df2$wis_IL)
+Scaled.df2$photosyntheticPathway <- as.factor(Scaled.df2$photosyntheticPathway)
+
+traits.scaled <- MCMCglmm(value ~ type + year + type:seedMass + type:LDMC + type:SLA + type:LNC + type:LCC + type:LPC + type:SDMC + type:circularity + type:vegetativeHeight + type:leafLength + type:leafThickness + type:leafWidth + type:photosyntheticPathway + type:rhizomes + type:fibrous + type:nFixer + type:wis_IL, random=~plot + block_BS.mod, data=Scaled.df2, nitt = 100000, thin=100, burnin=10000)
+summary(traits.scaled) -> Straits.scaled
+
+traits.phy.scaled <- MCMCglmm(value ~ type + year + seedMass + LDMC + SLA + LNC + LCC + LPC + SDMC + circularity + vegetativeHeight + leafLength + leafThickness + leafWidth + photosyntheticPathway + rhizomes + nFixer, random=~plot + block_BS.mod + Species.new, ginverse= list(Species.new=inv.phylop$Ainv), data=Scaled.df2, nitt = 100000, thin=100, burnin=10000)
+
+```
+
+#Optimal Model(s) diagnostics
+```{r}
+#pr = TRUE, To examine the random intercepts, one should add pr = TRUE (FALSE by default).
+
+######!!!!!!select prior G=list(G1=list(V=1, nu=0.002))) #for phylogeny as radom effect (http://www.jcsantosresearch.org/Class_2014_Spring_Comparative/pdf/week_12/Mar_24_2015_continuous_discrete_ver_4.pdf)
+effectiveSize(model.traits.phy$Sol)
+#the models should have over-dispersed starting values. This will stop MCMCglmm finding "heuristically" good starting values.
+#Approximate convergence is diagnosed when the upper CI limit is close to 1
+gelman.diag(mcmc.list(model.traits.phy$Sol, model.traits$Sol)) #have to have same nitt and thinning
+
+#autocorrelation
+autocorr.plot(model.traits.phy$Sol)
+autocorr.plot(model.traits.phy$VCV)
+xyplot(log(model.traits.phy$VCV))
+#check random effects trace plot
+plot(model.traits.phy$VCV)
+
+#robustness to different priors
+  ## Parameter-expanded prior should be uninformative for variances and covariance
+#parameter expanded priors for the random effects by including prior = prior1. Each random effect is represented by a G, and the residual is represented by R. The parameter expansion refers to the fact that we have included a prior mean (alpha.mu) and (co)variance matrix (alpha.V) as well as V and nu. For now, alpha.V is going to be 1000
+a <- 1000
+prior1 <- list(R = list(V = diag(1), nu = 0.002),
+               G = list(G1 = list(V = diag(1), nu = 1, alpha.mu = 0, alpha.V = diag(1)*a),
+                        G1 = list(V = diag(1), nu = 1, alpha.mu = 0, alpha.V = diag(1)*a),
+                        G1 = list(V = diag(1), nu = 1, alpha.mu = 0, alpha.V = diag(1)*a)))
+
+randomprior <- MCMCglmm( ,data=, prior = prior1, nitt = 60000)
+#If effective sample sizes are much bigger; This is a good sign.
+#plot(randomprior$VCV)
+```
+
+#Make the table for export:
+```{r}
+#summary(model.traits) -> Smodel.traits
+Smodel.traits.phy -> SSS
+#Smodel.traits -> SSS
+as.data.frame(SSS$solutions) -> fixed
+as.data.frame(SSS$Gcovariances) -> random
+as.data.frame(SSS$Rcovariances) -> Rvar
+SSS$DIC -> dic
+headers <- c("modelName", "DIC", "predictors", colnames(SSS$solutions))
+
+#in the column "predictors" paste colnames (c(fixed, random, Rvar)
+c(rownames(fixed), rownames(random), rownames(Rvar)) -> preds
+bind_rows(fixed, random, Rvar) -> dt #drops row and col names
+names(dt) <- c("post.mean", "CI_low", "CI_high", "eff.samp", "pMCMC") #fix names
+
+data.frame(Modelname=paste0("SSS"), DIC = SSS$DIC, Predictors=unlist(preds), dt) -> glmTable
+#write.csv(glmTable, file="../OUT/glmTable.csv")
+
+##TRY MAKING THE TABLE LONG: one row per model.
+headers2 <- c("Modelname", "DIC", preds)
+glmRawtable <- data.frame(matrix(ncol = length(headers2), nrow = 0))
+colnames(glmRawtable) <- headers2
+#fill each row per model
+#random <- c("plot","block_BS.mod" ,"units")
+colnames(t(SSS$solutions)) #matches some of the headers (year2017, LNC etc.)
+colnames(t(SSS$Gcovariances)) #matches random effect headers
+
+#######effect size plot ############## 
+p <- ggplot(glmTable, mapping = aes(x = reorder(Predictors, post.mean),
+                                    y = post.mean, ymin = CI_low, ymax = CI_high))
+effsam.plot <- p + geom_pointrange() + coord_flip() + labs(x="", y="post mean and CIs")
+#ggsave(effsam.plot, file="../OUT/model.PA.phy_effectSize.png", width=80, units="mm")
+#now plot multiple models, model each colored, to compare:
+#remove insignificant effects for plotting purposes:
+
+#color based on catageory:
+years <- c("year2017", "year2018.05", "year2018.09", "year2019.06", "year2019.09")
+roots <- c("rhizomes", "bulbs", "corms", "fibrous")
+random <- c("units", "Species.new", "block_BS.mod", "plot", "(Intercept)")
+lifeform <- c("Lifeformhemicryptophytes", "Lifeformphanerophytes", "Lifeformgeophytes")
+traits <- c("leafWidth", "leafThickness", "leafLength", "circularity", "SLA", "LNC", "LCC", "LDMC", "LPC", "vegetativeHeight", "seedMass", "SDMC")
+other <- c("nFixer", "photosyntheticPathwayC4")
+
+new.groups <- data.table( Predictors=c(years, roots, random, lifeform, traits, other), Group=c( 
+  rep("year", length(years)), 
+  rep("roots",length(roots)), 
+  rep("random", length(random)), 
+  rep("lifeform", length(lifeform)), 
+  rep("traits", length(traits)), 
+  rep("other", length(other)) ), key=c("Predictors", "Group"))  
+
+new.glmTable <- merge(glmTable, new.groups, by.x="Predictors", by.y="Predictors") 
+
+p2 <- ggplot(new.glmTable, mapping = aes(x = reorder(Predictors, post.mean),
+                                    y = post.mean, ymin = CI_low, ymax = CI_high, color=Group))
+effsam.plot2 <- p2 + geom_pointrange() + coord_flip() + labs(x="", y="post mean and CIs") + theme_bw() + 
+  scale_colour_manual(values = pal_jco()(6), name="Predictors")
+#pal_uchicago
+ # scale_colour_manual(values=c(year = "red", lifeform= "blue", roots="green", traits="pink", random="black", other="green"), name="Predictors") #,
+                            
+#labels=c('year', "lifeform", 'root traits', "leaf traits","random", "other"))
+                                         
+```
+
+```{r}
+#test code to extract info from summary(x) for csv file
+#library(modelsummary)
+library(MCMCglmm)
+data(PlodiaPO)
+
+# add custom functions to extract estimates (tidy) and goodness-of-fit (glance) information
+tidy.MCMCglmm <- function(object, ...) {
+    s <- summary(object, ...)
+    ret <- tibble::tibble(term = row.names(s$solutions),
+                          estimate = s$solutions[, 1],
+                          conf.low = s$solutions[, 2],
+                          conf.high = s$solutions[, 3], 
+                          eff.sample = s$solutions[, 4])
+    ret
+}
+glance.MCMCglmm <- function(object, ...) {
+    ret <- tibble::tibble(dic = object$DIC,
+                          n = nrow(object$X))
+    ret
+}
+
+# estimate a simple model
+#model.PA2
+
+# summarize the model
+msummary(model.PA2, statistic = 'conf.int')
+```
+
+
+```{r}
+##SUMMARIZE MODELS INTO TABLES:
+preds <- c('seedMass', 'LDMC', 'SDMC', 'LDMC', "SLA", "LNC", "vegetativeHeight", "mntd.diff", "mpd.diff", "mntd16", "mpd16", "year")
+gcovs <- c('blocks', 'new.rep', 'species.new')
+headers <- c('dataset', 'type' ,'trait', "model",
+             'DIC', 'delta DIC', 'Sum DICw',
+             'Residuals var',
+             'blocks_var',
+             "new.rep_var",
+             'Phylo_var',
+              "preds")
+
+glmmSummary <- matrix(NA, 0, length(headers), dimnames = list(NULL, headers))
+
+for(plottype in names(glm.analyses)) { #seed vs Seed
+  for(traitType in traitNames) { #mice vs full
+    for(Covertype in coverNames){ #cover dataset
+      mTemp <- lapply(glm.analyses[[plottype]][[traitType]][[Covertype]], summary) #can I swtich the order?
+
+names(mTemp) <- names(glm.analyses[[plottype]][[traitType]][[Covertype]])
+#now names in mTemp assign to dataset, type, phyno etc.  
+
+glmmSummary <- rbind(glmmSummary,
+                     c(dataset, type, trait, #Coverdataset_SeedvsSeed_MICEvsFull
+                       DIC = round(mTemp$DIC, roundTo),
+                       Delta.DIC = NA,
+                       Residual.cov = mTemp$Rcovariances[1:3] %>%
+                         round(roundTo) %>%
+                         format(digits = roundTo) %>%
+                         (function(x) paste(x[1], ' (', x[2], ',',
+                                            x[3], ')', sep = '')),
+                
+                       as.data.frame(mTemp$Gcovariances)[gcovs, 1:3] %>%
+                         round(roundTo) %>%
+                         format(digits = roundTo) %>%
+                         apply(., 1, function(x) paste(x[1],
+                                                       ' (', x[2], ',',
+                                                       x[3],')', sep = ''))
+                     ) #close c
+ ) #close rbind
+    } #close coverType
+  } #close traitType
+} #close plotType
+
+#write to file glmmSummary
+
+```
+
+
+
+```{r}
+#Making summary tables and plot effect size
+summary(model.traits.phy) -> SSS
+as.data.frame(SSS$solutions) -> fixed
+as.data.frame(SSS$Gcovariances) -> random
+as.data.frame(SSS$Rcovariances) -> Rvar
+SSS$DIC -> dic
+headers <- c("modelName", "DIC", "predictors", colnames(SSS$solutions))
+
+#in the column "predictors" paste colnames (c(fixed, random, Rvar)
+c(rownames(fixed), rownames(random), rownames(Rvar)) -> preds
+c(rownames(fixed), rownames(Rvar)) -> preds.new
+
+bind_rows(fixed, random, Rvar) -> dt #drops row and col names
+bind_rows(fixed, Rvar) -> dt.new #drops row and col names
+
+names(dt) <- c("post.mean", "CI_low", "CI_high", "eff.samp", "pMCMC") #fix names
+names(dt.new) <- c("post.mean", "CI_low", "CI_high", "eff.samp", "pMCMC") #fix names
+
+data.frame(Modelname=paste0("SSS"), DIC = SSS$DIC, Predictors=unlist(preds), dt) -> glmTable
+data.frame(Modelname=paste0("SSS"), DIC = SSS$DIC, Predictors=unlist(preds.new), dt.new) -> glmTableToPlot
+
+#write.csv(glmTable, file="../OUT/glmTable_model.PA1.csv")
+
+##TRY MAKING THE TABLE LONG: one row per model.
+headers2 <- c("Modelname", "DIC", preds)
+glmRawtable <- data.frame(matrix(ncol = length(headers2), nrow = 0))
+colnames(glmRawtable) <- headers2
+#fill each row per model
+#random <- c("plot","block_BS.mod" ,"units")
+colnames(t(SSS$solutions)) #matches some of the headers (year2017, LNC etc.)
+colnames(t(SSS$Gcovariances)) #matches random effect headers
+
+#######effect size plot ############## 
+p <- ggplot(glmTableToPlot[2:26,], mapping = aes(x = reorder(Predictors, post.mean),
+                                    y = post.mean, ymin = CI_low, ymax = CI_high))
+effsam.plot <- p + geom_pointrange() + coord_flip() + labs(x="", y="post mean and CIs")
+#ggsave(effsam.plot, file="../OUT/model.PA.phy_effectSize.png", width=80, units="mm")
+#now plot multiple models, model each colored, to compare:
+
+#color based on catageory:
+years <- c("year2017", "year2018.05", "year2018.09", "year2019.06", "year2019.09")
+roots <- c("rhizomes", "bulbs", "corms", "fibrous")
+#random <- c("units", "Species.new", "block_BS.mod", "plot", "(Intercept)")
+lifeform <- c("Lifeformhemicryptophytes", "Lifeformphanerophytes", "Lifeformgeophytes")
+traits <- c("leafWidth", "leafThickness", "leafLength", "circularity", "SLA", "LNC", "LCC", "LDMC", "LPC", "vegetativeHeight", "seedMass", "SDMC")
+other <- c("nFixer", "photosyntheticPathwayC4")
+
+new.groups <- data.table(Predictors=c(years, roots, lifeform, traits, other), Group=c( 
+  rep("year", length(years)), 
+  rep("roots",length(roots)), 
+  rep("lifeform", length(lifeform)), 
+  rep("traits", length(traits)), 
+  rep("other", length(other)) ), key=c("Predictors", "Group"))  
+
+new.glmTable <- merge(glmTable, new.groups, by.x="Predictors", by.y="Predictors") 
+
+p2 <- ggplot(new.glmTable, mapping = aes(x = reorder(Predictors, post.mean),
+                                    y = post.mean, ymin = CI_low, ymax = CI_high, color=Group))
+effsam.plot2 <- p2 + geom_pointrange() + coord_flip() + labs(x="", y="post mean and CIs") + theme_bw() + 
+  scale_colour_manual(values = pal_jco()(6), name="Predictors")
+
+```
