@@ -1,0 +1,156 @@
+---
+title: "999c.calculate.PD.metrics"
+output: html_document
+---
+```{r}
+library(ape)
+library(picante)
+```
+
+```{r}
+###################################################################
+###LOAD CURRENT SURVEY FOR CALCULATING PD METRICS
+###################################################################
+##CHANGE SURVEY INFO HERE:
+files.current <- list.files(path = "../DATA/2019_VegetationCover", pattern="RAW.sppCovMat.2019.MAX", full=TRUE)
+dat.current <- lapply(files.current, FUN=read.csv, header=TRUE)
+dat.current = do.call(rbind, dat.current) #args is one argument
+#read.csv(file=files.current) -> dat.current
+dat.current <- dat.current[order(dat.current$plot),] #THIS IS ESSENTIAL!!!  order by plot#
+
+file_name <- basename(files.current)[1]
+gsub(".csv", "", file_name) -> file_name #dtop the .csv
+gsub("^.*?\\.","", file_name) -> file_name
+gsub("^.*?\\.","", file_name) -> file_name
+sub("^([^.]*.[^.]*).*", "\\1", file_name) -> date
+
+####################################################################
+###LOAD COVER FOR CURRENT SURVEY
+####################################################################
+sub("\\RAW.*", "", files.current[1]) -> path
+covMat <- read.csv(file= paste0(path, "COVER.sppCovMat.",date,".csv"))
+#T2 <- read.csv(file= paste0(path, "COVER.sppCovMat.",date,".csv"))
+#covMat <- rbind(T, T2)
+covMat <- covMat[order(covMat$plot),] #order by plot#
+rownames(covMat) <- covMat$plot
+covMat.NA <- covMat[,-c(1:4)] ##THIS MAY CHANGE 
+covMat.0 <- covMat.NA 
+for(i in 1:dim(covMat.0)[1]) covMat.0[i, is.na(covMat.0[i, ])] <- 0
+
+###################################################################
+###LOAD PREVIOUS SURVEY FOR RATIOS
+###################################################################
+#dat17 <- read.csv(file = "../DATA/2017_VegetationCover/cover.matrix.2019-07-16.csv", as.is = TRUE) #127 species as_planted to 2017
+#dat17 -> dat.previous #USE FOR 2017 ONLY
+
+dat18 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.MAX.csv", as.is = TRUE)
+dat18 -> dat.previous
+
+#files.prev <- list.files(path = "../DATA/2018_VegetationCover", pattern="RAW.sppCovMat.2018.05", full=TRUE)
+#dat.prev <- lapply(files.prev, FUN=read.csv, header=TRUE)
+#dat.previous = do.call(rbind, dat.prev) #args is one argument
+#dat.previous <- dat.previous[order(dat.previous$plot),] #order by plot#
+#use dat in place of as_planted or as_observed as in 00.load.and.format2017 to get 2017-2018 calculations
+
+###################################################################
+##Phylogeny
+###################################################################
+tr <- read.tree('../DATA/phylogeny.analyzed.2016-01-05b.tre') #140 tips
+tr$tip.label[tr$tip.label== "Symphyotrichum_novae-angliae"] <-
+  "Symphyotrichum_novae.angliae"
+colnames(covMat) -> spp.names #col names from 2017 matrix 105
+tr.pruned <- drop.tip(tr, which(!tr$tip.label %in% spp.names))
+```
+
+```{r}
+###################################################################
+#PD METRICS
+###################################################################
+#dat = 2017 taken from Hipp et al. 2018 script
+    #PREVIOUSLY CALCULATED as_planted (2016)- copy over from original or use load.and.format2017 script
+    #dat$cov$PD_as_designed <- pd(dat$plantedMat, tr.pruned)$PD
+    #dat$cov$PD_planted <- pd(dat$plantedMatCorrected, tr.pruned)$PD
+    #dat$cov$PD_SES_planted <- ses.pd(dat$plantedMatCorrected, tr.pruned)$pd.obs.z
+    #dat$cov$MNTD_planted <- mntd(dat$plantedMatCorrected, cophenetic(tr.pruned))
+    #dat$cov$MNTD_SES_planted <- ses.mntd(dat$plantedMatCorrected, cophenetic(tr.pruned))$mntd.obs.z
+    #dat$cov$MPD_planted <- mpd(dat$plantedMatCorrected, cophenetic(tr.pruned))
+    #dat$cov$MPD_SES_planted <- ses.mpd(dat$plantedMatCorrected, cophenetic(tr.pruned))$mpd.obs.z
+
+dat.current$PD_observed <- pd(covMat.NA, tr.pruned)$PD
+dat.current$PD_SES_observed <- ses.pd(covMat.NA, tr.pruned)$pd.obs.z 
+dat.current$MNTD_abundance.weighted_observed <- mntd(covMat.0, cophenetic(tr.pruned), abundance.weighted=TRUE) 
+dat.current$MNTD_SES_abundance.weighted_observed <- ses.mntd(covMat.0, cophenetic(tr.pruned), abundance.weighted=TRUE)$mntd.obs.z
+dat.current$MNTD_observed <- mntd(covMat.0, cophenetic(tr.pruned), abundance.weighted=F)
+dat.current$MNTD_SES_observed <- ses.mntd(covMat.0, cophenetic(tr.pruned), abundance.weighted=F)$mntd.obs.z
+dat.current$MPD_abundance.weighted_observed <- mpd(covMat.0, cophenetic(tr.pruned), abundance.weighted=TRUE)
+dat.current$MPD_SES_abundance.weighted_observed <- ses.mpd(covMat.0, cophenetic(tr.pruned), abundance.weighted=TRUE)$mpd.obs.z
+dat.current$MPD_observed <- mpd(covMat.0, cophenetic(tr.pruned), abundance.weighted=F)
+dat.current$MPD_SES_observed <- ses.mpd(covMat.0, cophenetic(tr.pruned), abundance.weighted=F)$mpd.obs.z
+  #dat$cov$PSV_planted <- psv(dat$plantedMat, tr.pruned)
+
+#####RATIOS################thus all_planted in original script changed to _observed to reflect 2017/2018
+
+#dat.current$cov$Change_in_MNTD <- dat$cov$MNTD_observed - dat$cov$MNTD_planted
+dat.current$Change_in_MNTD <- dat.current$MNTD_observed - dat.previous$MNTD_observed
+#dat.current$cov$Change_in_MNTD_SES <- dat$cov$MNTD_SES_observed - dat$cov$MNTD_SES_planted
+dat.current$Change_in_MNTD_SES <- dat.current$MNTD_SES_observed - dat.previous$MNTD_SES_observed
+#dat.current$cov$Change_in_MNTD_abundance.weighted <- dat$cov$MNTD_abundance.weighted_observed - dat$cov$MNTD_planted
+dat.current$Change_in_MNTD_abundance.weighted <- dat.current$MNTD_abundance.weighted_observed - dat.previous$MNTD_observed
+#dat$cov$Change_in_MNTD_SES_abundance.weighted <- dat$cov$MNTD_SES_abundance.weighted_observed - dat$cov$MNTD_SES_planted
+dat.current$Change_in_MNTD_SES_abundance.weighted <- dat.current$MNTD_SES_abundance.weighted_observed - dat.previous$MNTD_SES_observed
+#dat$cov$Change_in_MPD <- dat$cov$MPD_observed - dat$cov$MPD_planted
+dat.current$Change_in_MPD <- dat.current$MPD_observed - dat.previous$MPD_observed
+#dat$cov$Change_in_MPD_SES <- dat$cov$MPD_SES_observed - dat$cov$MPD_SES_planted
+dat.current$Change_in_MPD_SES <- dat.current$MPD_SES_observed - dat.previous$MPD_SES_observed
+#dat$cov$Change_in_MPD_abundance.weighted <- dat$cov$MPD_abundance.weighted_observed - dat$cov$MPD_planted
+dat.current$Change_in_MPD_abundance.weighted <- dat.current$MPD_abundance.weighted_observed - dat.previous$MPD_observed
+#dat$cov$Change_in_MPD_SES_abundance.weighted <- dat$cov$MPD_SES_abundance.weighted_observed - dat$cov$MPD_SES_planted
+dat.current$Change_in_MPD_SES_abundance.weighted <- dat.current$MPD_SES_abundance.weighted_observed - dat.previous$MPD_SES_observed
+#dat$cov$Change_in_PD <- dat$cov$PD_observed - dat$cov$PD_planted
+dat.current$Change_in_PD <- dat.current$PD_observed - dat.previous$PD_observed
+#dat$cov$Change_in_PD_SES <- dat$cov$PD_SES_observed - dat$cov$PD_SES_planted
+dat.current$Change_in_PD_SES <- dat.current$PD_SES_observed - dat.previous$PD_SES_observed
+#dat$cov$SR_planted <- apply(dat$covMat.NA, 1, function(x) sum(!is.na(x)))
+#dat$cov$SR_observed <- apply(dat$covMat.NA, 1, function(x) sum(x > 0, na.rm = T))
+dat.current$SR_observed <- apply(covMat.NA, 1, function(x) sum(x > 0, na.rm = T)) 
+#dat$cov$Change_in_SR <- dat$cov$SR_observed - dat$cov$SR_planted
+dat.current$Change_in_SR <- dat.current$SR_observed - dat.previous$SR_observed
+#dat$cov$SR_planted_excluding_oddballs <- apply(dat$covMat.NA[, -spp.oddballs], 1, function(x) sum(!is.na(x)))
+#dat$cov$SR_observed_excluding_oddballs <- apply(dat$covMat.NA[, -spp.oddballs], 1, function(x) sum(x > 0, na.rm = T))
+#dat$cov$Change_in_SR_excluding_oddballs <- dat$cov$SR_observed_excluding_oddballs - dat$cov$SR_planted_excluding_oddballs
+
+###################################################################
+##########RATIOS #dat refers to the 2017 matrix ######################
+#dat$cov$MNTD_ratio <- dat$cov$MNTD_observed / dat$cov$MNTD_planted
+dat.current$MNTD_ratio <- dat.current$MNTD_observed / dat.previous$MNTD_observed
+#dat$cov$Abundance_weighted_MNTD_ratio <- dat$cov$MNTD_abundance.weighted_observed / dat$cov$MNTD_planted
+dat.current$Abundance_weighted_MNTD_ratio <- dat.current$MNTD_abundance.weighted_observed / dat.previous$MNTD_observed
+#dat$cov$MPD_ratio <- dat$cov$MPD_observed / dat$cov$MPD_planted
+dat.current$MPD_ratio <- dat.current$MPD_observed / dat.previous$MPD_observed
+#dat$cov$Abundance_weighted_MPD_ratio <- dat$cov$MPD_abundance.weighted_observed / dat$cov$MPD_planted
+dat.current$Abundance_weighted_MPD_ratio <- dat.current$MPD_abundance.weighted_observed / dat.previous$MPD_observed
+#dat$cov$PD_ratio <- dat$cov$PD_observed / dat$cov$PD_planted
+dat.current$PD_ratio <- dat.current$PD_observed / dat.previous$PD_observed
+#dat$cov$SR_ratio <- dat$cov$SR_observed / dat$cov$SR_planted
+dat.current$SR_ratio <- dat.current$SR_observed / dat.previous$SR_observed
+
+#SES RATIOS 2018 /2017
+#dat$cov$MNTD_SES_ratio <- dat$cov$MNTD_SES_observed / dat$cov$MNTD_SES_planted
+dat.current$MNTD_SES_ratio <- dat.current$MNTD_SES_observed / dat.previous$MNTD_SES_observed
+#dat$cov$Abundance_weighted_MNTD_SES_ratio <- dat$cov$MNTD_SES_abundance.weighted_observed / dat$cov$MNTD_SES_planted
+dat.current$Abundance_weighted_MNTD_SES_ratio <- dat.current$MNTD_SES_abundance.weighted_observed / dat.previous$MNTD_SES_observed
+#dat$cov$MPD_SES_ratio <- dat$cov$MPD_SES_observed / dat$cov$MPD_SES_planted
+dat.current$MPD_SES_ratio <- dat.current$MPD_SES_observed / dat.previous$MPD_SES_observed
+#dat$cov$Abundance_weighted_MPD_SES_ratio <- dat$cov$MPD_SES_abundance.weighted_observed / dat$cov$MPD_SES_planted
+dat.current$Abundance_weighted_MPD_SES_ratio <- dat.current$MPD_SES_abundance.weighted_observed / dat.previous$MPD_SES_observed
+#dat$cov$PD_SES_ratio <- dat$cov$PD_SES_observed / dat$cov$PD_SES_planted
+dat.current$PD_SES_ratio <- dat.current$PD_SES_observed / dat.previous$PD_SES_observed
+
+#write.csv(dat.current, "cover.matrix.2018.new.wSpring.csv") #to be consistent with where 2017 data
+#write.csv(dat.current, file="../DATA/2018_VegetationCover/PD.metrics.sppCovMat.2018.09.csv")
+
+write.csv(dat.current, file= paste0(path, "PD.metrics.", date, ".csv"))
+
+
+```
+
