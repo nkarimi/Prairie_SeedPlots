@@ -1,0 +1,201 @@
+---
+title: "traits.CWM.plots"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(cowplot)
+library(viridis)
+library(broom)
+library(ggplot2)
+library(lubridate)
+library(lme4)
+#library(ggeffects)
+library(sjPlot)
+```
+
+
+```{r}
+#weighted.traits made from 01a. with df.cover.long2 from load and format.
+weighted.traits.cwm <- weighted.traits.plot
+#weighted.traits.cwm$phyD <-  data.frame(phyD = substr(weighted.traits.cwm$Code,1,1)) 
+#unlist(weighted.traits.cwm$phyD) -> weighted.traits.cwm$phyD
+#weighted.traits.cwm$fd <-  data.frame(fd = substr(weighted.traits.cwm$Code,2,2)) 
+#unlist(weighted.traits.cwm$fd) -> weighted.traits.cwm$fd
+cwm <- reshape2::melt(weighted.traits.cwm,  id.vars = c("year", "plot", "type", "phyD", "fd"), variable.name = "Traits") 
+cwm$fd <- as.factor(cwm$fd)
+cwm <- split(cwm, cwm$Traits)
+sm <- aov(value ~ type:fd, data=cwm$seedMass) 
+TukeyHSD(sm)
+
+#Add letters for significance:
+generate_label_df <- function(TUKEY, variable){
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- variable[,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  #I need to put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+
+TRAIT <- "SLA"
+for (facetk in as.character(unique(cwm$vegetativeHeight$fd))) {   
+  subdf <- subset(cwm$vegetativeHeight, fd==facetk)
+  model=lm(value ~ type:fd, data=cwm$vegetativeHeight)
+  ANOVA=aov(model)
+  TUKEY <- TukeyHSD(ANOVA)#
+  labels <- generate_label_df(TUKEY , TUKEY$`type:fd`)
+}
+
+sm <- MCMCglmm(seedMass ~ type + type:fd, random = ~plot, data=weighted.traits.cwm, nitt = 100000, thin=100, burnin=10000)
+cwm.lmer.model <- lmer(value ~ type + type*fd + (1|plot), data=cwm)
+
+as.numeric(weighted.traits.cwm$year) -> weighted.traits.cwm$year
+cwm.mler <- lmer(vegetativeHeight ~ year + fd + phyD + (1|plot), data=weighted.traits.cwm)
+vh <- plot_model(cwm.mler, type = "pred", terms = "year")
+
+lmer.sla <- lmer(SLA ~ year + fd + phyD + (1|plot), data=weighted.traits.cwm)
+sla <- plot_model(lmer.sla, type = "pred", terms = "year")
+
+lmer.sdmc <- lmer(SDMC ~ year + fd + phyD + (1|plot), data=weighted.traits.cwm)
+sdmc <- plot_model(lmer.sdmc, type = "pred", terms = "year")
+ 
+lmer.lnc <- lmer(LNC ~ year + fd + phyD + (1|plot), data=weighted.traits.cwm)
+lnc <- plot_model(lmer.lnc, type = "pred", terms = "year")
+ 
+plot_grid(vh, sla, sdmc, lnc) -> predicted.cwms
+```
+
+#CWMs traits by year
+```{r}
+df.cover.na.glm.long.trait$Plug -> datCov.long.trait
+names(datCov.long.trait)[names(datCov.long.trait) == 'value'] <- 'cover'
+
+a <- ggplot(datCov.long.trait, aes(x=SDMC, y=cover, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method=lm) +
+  scale_color_brewer(palette="Blues") +
+  labs(x="stem dry matter content (SDMC)", y="abs. cover")
+
+rownames(CovChange) -> CovChange$Species
+newdf <- merge(datCov.long.trait, CovChange, by="Species")
+names(newdf)[names(newdf) == 'yr2-yr3'] <- 'deltaCover2'
+names(newdf)[names(newdf) == 'yr1-yr2'] <- 'deltaCover1'
+
+aa <- ggplot(newdf, aes(x=SDMC, y=deltaCover2)) +
+  geom_point(aes(color=type, shape=type)) + 
+  geom_smooth(method="lm", aes(color=type)) +
+  scale_color_brewer(palette="Reds") +
+  labs(x="stem dry matter content (SDMC)", y="delta cover")
+
+b <- ggplot(datCov.long.trait, aes(x=LDMC, y=cover, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method="lm", formula = y ~ x + I(x^2)) +
+  scale_color_brewer(palette="Greens") +
+  labs(x="leaf dry matter content (LDMC)", y="abs. cover")
+
+bb <- ggplot(newdf, aes(x=LDMC, y=deltaCover2, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method=lm) +
+  scale_color_brewer(palette="Blues") +
+  labs(x="leaf dry matter content (LDMC)", y="delta cover")
+
+c <- ggplot(datCov.long.trait, aes(x=seedMass, y=cover, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method=lm) +
+  scale_color_brewer(palette="Reds") +
+  labs(x="seed mass", y="abs. cover")
+
+cc <- ggplot(newdf, aes(x=seedMass, y=deltaCover2, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method=lm) +
+  scale_color_brewer(palette="Reds") +
+  labs(x="seed mass", y="delta cover")
+
+d <-ggplot(datCov.long.trait, aes(x=vegetativeHeight, y=cover, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method="lm", formula = y ~ x + I(x^2)) +
+  scale_color_brewer(palette="Oranges") +
+  labs(x="vegetative height", y="abs. cover")
+
+dd <-ggplot(newdf, aes(x=vegetativeHeight, y=deltaCover2, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method="auto") +
+  scale_color_brewer(palette="Oranges") +
+  labs(x="vegetative height", y="delta cover")
+
+
+e <- ggplot(datCov.long.trait, aes(x=cover, y=LNC, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method=lm) +
+  scale_color_brewer(palette="Purples")
+
+f <- ggplot(datCov.long.trait, aes(x=cover, y=SLA, color=type, shape=type)) +
+  geom_point() + 
+  geom_smooth(method=lm) +
+  scale_color_brewer(palette="Greys")
+
+traits.by.cover <- plot_grid(a, c, d, b, labels = "AUTO", nrow = 2)
+ggsave(traits.by.cover, file="../OUT/traits~cover.png")
+```
+
+```{r}
+# get mean and SDs of CWMs from weighted.traits
+stderror <- function(x) sd(x)/sqrt(length(x)) # standard error function
+CWMs <- weighted.traits %>%
+  group_by(year, type)  %>%
+  summarise_at(.vars = vars(seedMass,LDMC,SLA, SDMC, vegetativeHeight, LNC, LCC),
+               .funs = c(Mean="mean", Sd="sd", SE = "stderror") )
+
+mm <- reshape2::melt(CWMs, id.var=c("year", "type"))
+trait_names <- c(
+  'seedMass_Mean'="seed M",
+  'LDMC_Mean'="LDMC",
+  'SLA_Mean'="SLA",
+  'SDMC_Mean'="SDMC", 
+  'vegetativeHeight_Mean' = "Veg.Ht", 
+  'LNC_Mean' = "LNC",
+  'LCC_Mean'= "LCC", 
+  'flowerHeight_Mean'="Flwr.Ht"
+)
+theme_set(theme_bw())
+library("ggsci")
+
+f <- ggplot(mm[1:80,], aes(x = year, y = value, group = type)) + geom_line(aes(color = variable, linetype=type)) +
+      facet_grid(variable ~ ., scales = "free", labeller = as_labeller(trait_names)) 
+cwm.plot <- f + labs(x="year", y="CWM") + theme_bw() +
+   theme(strip.background = element_rect(colour="grey", fill="white", 
+                                       size=1.5, linetype="solid")) +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+scale_colour_manual(values = pal_jco()(8))
+ 
+##
+cwm.long <- reshape2::melt(weighted.traits.plot, id.var=c("year", "type", "phyD", "plot", "fd"), value.name="value", variable.name="trait")
+
+cwm.long.sd <- cwm.long %>%
+  group_by(year, type, phyD, trait)  %>%
+  summarise_at(.vars = vars(value),
+               .funs = c(Mean="mean", Sd="sd", SE = "stderror") )
+
+split(cwm.long.sd, cwm.long.sd$type) -> mm.mice.phyd
+test <- filter(mm.mice.phyd$Plug, trait %in% c("seedMass", "LDMC", "LCC", "vegetativeHeight", "SDMC", "LNC", "leafLength"))
+
+as.data.frame(test) -> test
+as.character(test$trait) -> test$trait
+
+f.mice2 <- ggplot(test, aes(x = year, y = Mean, group = phyD)) + geom_line(aes(color=trait, linetype=phyD)) +
+      facet_grid(trait ~ ., scales = "free") 
+cwm.mice.plot <- f.mice2 + labs(x="year", y="CWM") + theme_bw() +
+   theme(strip.background = element_rect(colour="grey", fill="white", 
+                                       size=1.5, linetype="solid")) +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+scale_colour_manual(values = pal_jco()(8)) + geom_errorbar(aes(ymin=Mean-Sd, ymax=Mean+Sd)) +         facet_grid(trait ~ ., scales = "free") 
+
+#now add SD:
+split(test, test$trait) -> test.trt
+ggplot(test.trt$SDMC, aes(x = year, y = Mean, group = phyD)) + geom_line(aes(color=phyD, linetype=phyD)) +
+      facet_grid(phyD ~ ., scales = "free") + geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE)) +         facet_grid(phyD ~ ., scales = "free") 
+
