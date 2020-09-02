@@ -1,0 +1,62 @@
+---
+title: "MakeSiteSpTree"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(phytools)
+library(picante)
+library(reshape2)
+library(dplyr)
+library(geiger)
+```
+
+#arguments to make.spSite:
+#tr: phylo object
+#dat: data frame with
+#(1) column tipLabel equivalent to tip labels in tr
+#(2) row.names equivalent to the new labels you want for your fancy new tree
+
+```{r tree}
+phy <- read.tree(file="../DATA/phylogeny.analyzed.2016-01-05b.tre")
+phy$tip.label[which(phy$tip.label == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+as.planted <- read.csv("../DATA/matrix.of.planted.species.csv", as.is = TRUE, sep = ",")
+
+phy.tre <- drop.tip(phy, which(!phy$tip.label %in% names(as.planted[4:length(as.planted)])) )
+phy.tre <- drop.tip(phy, which(!phy$tip.label %in% names(as.planted[4:length(as.planted)])) )
+
+as.plantedsub <- subset(as.planted, select=-c(type, Code, year))
+as.plantedsub.long <- reshape2::melt(as.plantedsub, id.vars = c("plot"), variable.name = "Species") 
+as.plantedsub.long <- filter(as.plantedsub.long, value !="0") #remove value = NA, keeping cover = 0)
+as.data.frame(as.plantedsub.long$Species) -> df.spSite
+names(df.spSite) <- c("tipLabel")
+paste(as.plantedsub.long$plot, as.plantedsub.long$Species,sep="-") ->  new.labels
+rownames(df.spSite) <- new.labels
+```
+
+```{r}
+spD= 2.0
+t2 <- phy.tre
+for (i in unique(df.spSite$tipLabel)) {
+  a <- rcoal(sum(df.spSite$tipLabel == i), tip.label = row.names(df.spSite)[which(df.spSite$tipLabel == i)])
+  a <- rescale(a, model = "lambda", lambda=0)
+  a <- rescale(a, model = "depth", depth=spD)
+  t2 <- bind.tree(t2, a, where = which(t2$tip.label == i))
+  message(paste("just finished", i))
+}
+#tree converted inverse for glm
+```
+
+
+
+
+
+
+
+
+
+
+
+
