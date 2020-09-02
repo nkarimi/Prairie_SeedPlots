@@ -1,0 +1,203 @@
+---
+title: "01a.ordi.plots.MICEtraits"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(cowplot)
+library(reshape2)
+library(ggplot2)
+library(ggrepel)
+#library(grid)
+#library(FD)
+library(geiger)
+library(data.table)
+library(dplyr)
+library(tidyr)
+#library(vegan)
+```
+
+```{r}
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+setDT(traits.mat, keep.rownames = "Species")[]
+#Cover Data in #00.load.for.analyses
+traits.mat <- traits.mat %>% filter (Species %in% colnames(df.cover[8:ncol(df.cover)]))
+
+plots.traits.mat <- df.cover.long2 %>% 
+            left_join(traits.mat, by = "Species")
+
+plots.traits.mat$photosyntheticPathway <- as.numeric(sub("C3", "1", plots.traits.mat$photosyntheticPathway))
+plots.traits.mat$photosyntheticPathway[is.na(plots.traits.mat$photosyntheticPathway)] <- 0 #replace NA for C4 with 0
+drop.traits <- c("floweringStartcoded", "lifeCycleCoded", "wis_IL", "Lifeform", "habitClean")
+plots.traits.mat <- plots.traits.mat %>% select (-c(drop.traits))
+
+####Calculate weighted average of traits across species per plot by relative abundance 
+weighted.traits.plot <- setDT(plots.traits.mat)[, lapply(.SD, function(x) weighted.mean(x, value, na.rm = TRUE)), by = c("year", "plot", "type", "phyD", "fd"), .SDcols  = seedMass:genome_Use]
+```
+#Ordination of CWMs  
+```{r}
+tmds <- metaMDS(weighted.traits.plot[,-c(1:5)], k = 3, maxit = 15000)  
+tmds <- metaMDS(weighted.traits.plot[,-c(1:5)], k = 3, maxit = 15000, previous.best = tmds)
+#stressplot(tmds) #stress=0.1456962
+Wscores <- as.data.frame(scores(tmds)) #extract scores
+Wscores <- cbind(weighted.traits.plot[,1:5],Wscores) #add back in plot, yr, Codes
+Wscores2 <- Wscores[,-2]  
+Wscores3 <- subset(Wscores2, select=-c(fd))
+Wscores4 <- split(Wscores3, Wscores3$type) # to have scores2$Plug,scores2$Seed
+
+#Calculate mean x,y,z (CENTROID) per code class (phyD) to get shift/VECTORS:
+centroid.Phy.Plug <- Wscores4$Plug %>% #remove type and plot col
+    group_by(phyD, year, type) %>% 
+    summarise_all(funs(mean))
+
+centroid.Phy.Seed <- Wscores4$Seed %>% #remove tD col
+    group_by(phyD, year, type) %>% 
+    summarise_all(funs(mean))
+```
+
+#Plot by PhyD
+```{r}
+factor(Wscores4$Seed$phyD, levels = c('L', 'M', 'H')) -> Wscores4$Seed$phyD
+
+S.phyD <- ggplot() + 
+  stat_ellipse(data=fall.mice.ord4$Seed, aes(x=NMDS1,y=NMDS2, color= phyD)) +
+   geom_point(data = fall.mice.ord4$Seed, aes(NMDS1, NMDS2, color = phyD, shape=year),size=3) +
+   geom_path(data=centroid.Phy.Seed, aes(x = NMDS1, y = NMDS2, group = phyD), arrow = arrow(length = unit(0.15, "cm")), colour="black", size = 1) + 
+   labs(title = "Seed plots with mean shifts", color = "PhyD Group\n") + theme_bw()
+
+S.phyD <- S.phyD + scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9") )
+
+#ggsave(S.phyD, filename = "../OUT/S.phyD.png", width=8, height=6)
+mice.phy <- plot_grid(PP.phyD, S.phyD, nrow = 2, align = "v")
+save_plot("MICE.Traits.ordi.png", mice.phy, ncol = 2, # we're saving a grid plot of 2 columns
+          nrow = 2, 
+          base_aspect_ratio = 1.5
+          )
+```
+
+
+#Compare functional trait diversity classes
+```{r}
+Wscores.td <- subset(Wscores, select=-c(phyD))
+factor(Wscores.td$Seed$fd, levels = c('L','H')) -> Wscores.td$Seed$fd
+Wscores.td <- split(Wscores.td, Wscores.td$type) # to have scores2$Plug,scores2$Seed
+#Wscores.td <- split(Wscores.td, Wscores.td$type) # to have scores2$Plug,scores2$Seed
+subWscores.td <- split(subWscores.td, subWscores.td$type) # to have scores2$Plug,scores2$Seed
+subWscores.td -> Wscores.td
+
+centroid.tD.Seed <- Wscores.td$Seed %>% #remove phyD col
+    group_by(fd, year, type) %>% 
+    summarise_all(funs(mean))
+
+PP.tD <- ggplot() + 
+  stat_ellipse(data=Wscores.td$Plug, aes(x=NMDS1,y=NMDS2, color= fd)) +
+   geom_point(data = Wscores.td$Plug, aes(NMDS1, NMDS2, color = fd, shape=year),size=3) +
+   geom_path(data=centroid.tD.Plug, aes(x = NMDS1, y = NMDS2, group = fd), arrow = arrow(length = unit(0.15, "cm")), colour="black", size = 1) + 
+   labs(x="nmds1", y="nmds2", color = "FD") + theme_bw() 
+
+PP.tD <- PP.tD + scale_color_manual(values=c("mistyrose2", "mistyrose3")) + guides(shape = FALSE, color=FALSE) #remove only shape legend
+
+S.tD <- ggplot() + 
+  stat_ellipse(data=Wscores.td$Seed, aes(x=NMDS1,y=NMDS2, color= fd)) +
+   geom_point(data = Wscores.td$Seed, aes(NMDS1, NMDS2, color = fd, shape=year),size=3) +
+   geom_path(data=centroid.tD.Seed, aes(x = NMDS1, y = NMDS2, group = fd), arrow = arrow(length = unit(0.15, "cm")), colour="black", size = 1) + 
+   labs(title = "Seed plots by weighted traits with mean shifts", color = "tD Group\n") + theme_bw()
+
+S.tD <- S.tD + scale_color_manual(values=c("#b2abd2", "#5e3c99") )
+save_plot("MICE.Traits.ordi.FD.png", mice.td, ncol = 2, 
+          nrow = 2, 
+          base_aspect_ratio = 1.5
+          )
+```
+
+#Ordination using P/A and sub traits (WITHOUT weighted average)
+```{r}
+head(df.PA)
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+setDT(traits.mat, keep.rownames = "Species")[]
+traits.mat <- traits.mat %>% filter (Species %in% colnames(df.PA[4:ncol(df.PA)]))
+
+df.PA.long <- melt(df.PA, id.vars = c("year", "plot", "type", "Code"), variable.name = "Species")
+df.PA.long <- df.PA.long[order(df.PA.long$plot),] #order by plot not species
+
+plots.traits.mat <- df.PA.long %>% 
+            left_join(traits.mat, by = "Species")
+
+plots.traits.mat$photosyntheticPathway <- as.numeric(sub("C3", "1", plots.traits.mat$photosyntheticPathway))
+plots.traits.mat$photosyntheticPathway[is.na(plots.traits.mat$photosyntheticPathway)] <- 0 #replace NA for C4 with 0
+drop.traits <- c("floweringStartcoded", "lifeCycleCoded", "wis_IL", "Lifeform", "habitClean")
+plots.traits.mat <- plots.traits.mat %>% select (-c(drop.traits))
+head(plots.traits.mat)
+plots.traits.mat.f <- filter(plots.traits.mat, value != "0")
+
+#calcuate mean trait values across species per plot
+mean.traitsByplot <- plots.traits.mat.f %>% 
+group_by(plot, year, type, Code) %>%
+  summarise_if(is.numeric, mean, na.rm = TRUE)
+
+pa.tmds <- metaMDS(mean.traitsByplot[,-c(1:4)], k = 3, maxit = 25000)
+pa.tmds <- metaMDS(mean.traitsByplot[,-c(1:4)], k = 3, maxit = 25000, previous.best = pa.tmds)  
+#stressplot(pa.tmds)
+pa.scores <- as.data.frame(scores(pa.tmds)) #extract nmds scores
+pa.scores2 <- cbind(pa.scores, as.data.frame(mean.traitsByplot[,1:4] ))
+pa.scores2$phyD <- data.frame(phyD = substr(pa.scores2$Code,1,1)) #split code
+pa.scores2$tD <- data.frame(tD =substr(pa.scores2$Code,2,2))
+
+#split groupings for plotting
+pa.scores3 <- pa.scores2[,-4]  #take out plot or below mean wont work
+pa.scores3 <- split(pa.scores3, pa.scores3$type) # to have scores2$Plug,scores2$Seed
+pa.scores3$Plug <- subset(pa.scores3$Plug, select=-c(Code))
+pa.scores3$Seed <- subset(pa.scores3$Seed, select=-c(Code))
+
+as.character(unlist(pa.scores3$Plug$phyD)) -> pa.scores3$Plug$phyD #grouping issues for below
+as.character(unlist(pa.scores3$Plug$tD)) -> pa.scores3$Plug$tD 
+as.character(unlist(pa.scores3$Seed$phyD)) -> pa.scores3$Seed$phyD 
+
+centroids.plug <- pa.scores3$Plug %>% 
+    group_by(year, type, phyD) %>% 
+    summarise_all(funs(mean))
+
+centroids.seed <- pa.scores3$Seed %>% 
+    group_by(year, type, phyD) %>% 
+    summarise_all(funs(mean))
+              
+td.centroids.plug <- subset(pa.scores3$Plug, select=-phyD) %>% 
+    group_by(year, type, tD) %>% 
+    summarise_all(funs(mean))
+
+td.centroids.seed <- pa.scores3$Seed %>% 
+    group_by(year, type, tD) %>% 
+    summarise_all(funs(mean))
+
+```
+
+#PLOT P/A data
+```{r}
+factor(pa.scores3$Plug$phyD, levels = c('L', 'M', 'H')) -> pa.scores3$Plug$phyD
+
+Plug.pa <- ggplot() + 
+  stat_ellipse(data=pa.scores3$Plug, aes(x=NMDS1,y=NMDS2, color= phyD)) +
+   geom_point(data = pa.scores3$Plug, aes(NMDS1, NMDS2, color = phyD, shape=year),size=3) +
+    scale_shape_manual(values=c(8, 16, 17, 15, 3, 7)) +
+   geom_path(data=centroids.plug, aes(x = NMDS1, y = NMDS2,group=phyD), arrow = arrow(length = unit(0.15, "cm")), colour="black", size = .85) + 
+   labs(x="nmds1", y="nmds2", color = "phyD\n") + theme_bw() + guides(shape = FALSE) #remove only shape legend
+
+Plug.pa <- Plug.pa + scale_color_manual(values=c("honeydew2", "honeydew3", "honeydew4") ) 
+
+##FUNCTIONAL DIVERSITY (tD) for PA data:
+factor(pa.scores3$Plug$tD, levels = c('L', 'H')) -> pa.scores3$Plug$tD
+Plug.pa.td <- ggplot() + 
+  stat_ellipse(data=pa.scores3$Plug, aes(x=NMDS1,y=NMDS2, color= tD)) +
+   geom_point(data = pa.scores3$Plug, aes(NMDS1, NMDS2, color = tD, shape=year), size=3) +
+    scale_shape_manual(values=c(8, 16, 17, 15, 3, 7)) +
+   geom_path(data=td.centroids.plug, aes(x = NMDS1, y = NMDS2, group=tD), arrow = arrow(length = unit(0.15, "cm")), colour="black", size = .85) + 
+   labs(x="nmds1", y="nmds2", color = "FD") + theme_bw()
+
+Plug.pa.td <- Plug.pa.td + scale_color_manual(values=c("mistyrose2", "mistyrose3") )
+
+###PLOT
+#A.FD by CWM, B. FD for PA, C.phyD for CWM, D.phyD for PA):
+plot_grid(PP.tD, Plug.pa.td, PP.phyD, Plug.pa,labels = "AUTO", nrow = 2) 
+#ggsave(file="../OUT/traitOrds.png")
+
+```
