@@ -1,0 +1,161 @@
+---
+title: "PhyloStuff"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+library(evobiR)
+library(tidyverse)
+library(ggtree)
+library(ape)
+library(phytools)
+library(picante)
+library(dplyr)
+library(data.table)
+library(geiger)
+library(ggnewscale)
+```
+
+#Data
+```{r}
+#abund.dat.year from 02b. has mean species' cover for seed vs plug
+abund <- abund.dat.year$`2019` %>%
+group_by(Species) %>%
+  mutate(DeltaCov = mean_value_seed - mean_value_plug)
+
+ abund <- abund.dat.year$`2019` %>%
+group_by(Species) %>%
+  mutate(DIFFr = mean_value_seed/mean_value_plug)
+```
+#Phylogeny
+```{r}
+phy <- read.tree("../DATA/phylogeny.analyzed.2016-01-05b.tre") 
+phy$tip.label    #140
+#drop tips not in contable
+phy$tip.label[which(phy$tip.label == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+
+tree <- drop.tip(phy, which(!phy$tip.label %in% abund.dat.year$`2019`$Species)) 
+p <- ggtree(tree)
+p + geom_tiplab()
+```
+
+###Plot tree with cover ratio
+```{r}
+fig <- ggtree(tree) + geom_tiplab(size=1.5, offset=0.5) 
+legend_title1 <- "seed - plug cover"
+
+dat <- as.data.frame(abund$DeltaCov)
+rownames(dat) <- abund$Species
+
+p11 <- gheatmap(fig, data.frame(dat), offset=55, width=0.15, colnames = TRUE, colnames_position = "top",  colnames_angle = 45, hjust=0, colnames_offset_y=1,colnames_offset_x=1, font.size=2.5, low = "green", high = "purple") +
+scale_fill_gradient2(low = "green", mid = "white",  high = "purple", midpoint = 0, legend_title1) 
+
+####Add seed mass to figure (below for traits)
+sm <- as.data.frame(MICEtraits.drp$seedMass)
+rownames(sm) <- MICEtraits.drp$Species
+names(sm)<- "seed mass"
+
+fig5 <- p11 + new_scale_fill()
+legend_title2 <- c("seed mass")
+
+fig5.2 <- gheatmap(fig5, as.data.frame(sm), offset=87, width=0.06,
+                colnames = TRUE, colnames_position = "top",  colnames_angle = 45, font.size = 3.5, low="white", high="black") +
+  scale_fill_gradient2(low = "white", mid="grey99", high = "black", legend_title2) + #green
+  theme(legend.position="right", legend.title=element_text() ) 
+
+fig5.2
+ggsave(file="../OUT/Fig5.winner_loser_phylo.pdf")
+```
+
+```{r}
+MICEtraits <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', row.names = 1)
+setDT(MICEtraits, keep.rownames = "Species")[]
+#drop traits:
+MICEtraits.drp <- subset(MICEtraits, select = -c(lifeCycleCoded, floweringStartcoded, wis_IL) )
+MICEtraits.drp$Species <- gsub("Symphyotrichum_novae-angliae", "Symphyotrichum_novae.angliae" , MICEtraits.drp$Species)
+##Filter to only species in 2017 and 2018 cover (drop spring and misc - total 105 species vs as.planted has 127 species
+MICEtraits.drp <- MICEtraits.drp %>% filter (Species %in% colnames(df.cover[5:length(df.cover)]))
+MICEtraits.drp$Species -> rownames(MICEtraits.drp)
+#MICEtraits.drp <- MICEtraits.drp[,-1]
+
+#Load species translate table - species names with codes
+spp.trans <- read.delim('../DATA/sp.trans.tsv.txt') #, as.is = T)
+spp.trans <- spp.trans[!(spp.trans$CODE == ""), ]
+#TRAITS MATRIX:
+traits.full <- read.delim('../DATA/prairie.spp.list.v11.2016-01-05.tsv') #, as.is = T, row.names = 1)
+#See 01a.ordi.plots.MICEtraits.Rmd
+#select.traits <- subset(traits.full, select=c(seedMass, LDMC, SLA, LNC, LCC, LPC, SDMC, flowerHeight,vegetativeHeight, photosyntheticPathway, leafLength, leafThickness, leafWidth, petioleLength, genome_Use))
+#select these traits to be consistent with traits.mat
+select.traits <- subset(traits.full, select=c(seedMass, LDMC, SLA, LNC, LCC, LPC, SDMC,circularity, flowerHeight,vegetativeHeight, leafLength, leafThickness, leafWidth, petioleLength, photosyntheticPathway, genome_Use, nFixer, adventitious, primary, bulbs, corms, fibrous, rhizomes, stolons, tubers))
+
+#convert photosynthetic pathway:
+select.traits$photosyntheticPathway <- as.numeric(sub("C3", "1", select.traits$photosyntheticPathway))
+select.traits$photosyntheticPathway <- as.numeric(sub("C4", "0", select.traits$photosyntheticPathway))
+# the first col in test.traits isn't named because they are row names. add it:
+setDT(select.traits, keep.rownames = "Species")[]
+head(select.traits)
+head(spp.trans) #species translate table. traits matrix in spp.trans$Scientific.Name and plots in 
+#replace test.traits$Species with spp translate table: match spp.trans$Scientific.Name & replace with spp.trans$treeName
+indexSp <- match(select.traits$Species, spp.trans$Scientific.Name, nomatch = 0 )
+select.traits$Species[indexSp != 0] <- spp.trans$treeName[indexSp]
+##Filter to only species in 2017 and 2018 cover (drop spring and misc)
+traits107 <- select.traits %>% filter (Species %in% colnames(df.cover[5:ncol(df.cover)]))
+head(traits107)
+#load phylogeny
+phylo <- read.tree("../DATA/phylogeny.analyzed.2016-01-05b.tre")
+plot(phylo) #140 tips
+#matrix of abundance data.  
+samp <- df.cover[5:ncol(df.cover)] #2017 and 2018 seed and plug
+##CONVERT NAs to 0:
+samp[is.na(samp)] <- 0
+#matrix with discrete character data renamed 'traits'
+five.traits.df <- subset(MICEtraits.drp, select = c(seedMass,LDMC, SLA, LNC, vegetativeHeight))
+#prune any taxa from our tree that are not also represented in our sample matrix
+prunedphy <- prune.sample(samp = samp, phylo)
+#make sure the species are arranged in the some order in the community data and the phylogeny
+samporder <- samp[, prunedphy$tip.label]
+samporder 
+```
+
+#Test for Phylogenetic Signal
+```{r}
+prop.sig <- phylosig(tree2, contable.ordered$test_stat_plug, method="lambda", test=TRUE)
+prop.sigK <- phylosig(tree2, contable.ordered$test_stat_plug, method="K", test=TRUE)
+prop.sig$lambda
+prop.sigK$K
+
+change.sig <- phylosig(tree2, df.spp.diff.plug, method="lambda", test=TRUE)
+change.sigK <- phylosig(tree2, df.spp.diff.plug, method="K", test=TRUE)
+change.sig$lambda
+change.sigK$K
+
+ReorderData(tree, df.spp.diff.plug18, taxa.names=1) -> Change18.ordered
+ReorderData(tree, df.spp.diff.plug19, taxa.names=1) -> Change19.ordered
+as.data.frame(Change18.ordered) -> C
+
+Ch.sig <- phylosig(tree2, C$Change18.ordered, method="lambda", test=TRUE)
+Ch.sigK <- phylosig(tree2, C$Change18.ordered, method="K", test=TRUE)
+
+tree.di <- multi2di(tree2)
+
+#---- runs models
+lambdaModel <- fitContinuous(tree.di, C, model = "lambda")
+brownianModel <- fitContinuous(tree.di, C)
+OUModel <- fitContinuous(tree.di, C, model = "OU") #errors
+EBModel <- fitContinuous(tree.di, C, model = "EB")
+
+# calculate AIC weights
+bmAICC <- brownianModel$opt$aicc
+#ouAICC <- OUModel$opt$aicc
+ebAICC <- EBModel$opt$aicc
+
+aicc <- c(bmAICC, ebAICC)
+aiccD <- aicc - min(aicc)
+aw <- exp(-0.5 * aiccD)
+aiccW <- aw/sum(aw)
+aiccW
+```
+
+
