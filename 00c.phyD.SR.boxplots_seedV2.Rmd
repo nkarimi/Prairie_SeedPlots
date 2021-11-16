@@ -1,0 +1,549 @@
+---
+title: "00c.phyD.SR.boxplots"
+output: html_document
+---
+#SR and PhyD Boxplots similar to Hipp et al. 2018
+#SEED PLOTS
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(FD)
+library(cowplot)
+#library(lme4)
+library(dplyr)
+#library(multcompView)
+library(data.table)
+```
+
+#Load PD files
+```{r}
+dat17 <- read.csv(file = "../DATA/2017_VegetationCover/cover.matrix.2019-07-16.csv", as.is = TRUE) #original 2017 data plus as.planted WITH SPRING!
+dat17$SR_planted <- 15
+dat18 <- read.csv(file = "../DATA/2018_VegetationCover/PD.metrics.2018.MAX.csv", as.is = TRUE) 
+dat19 <- read.csv(file = "../DATA/2019_VegetationCover/PD.metrics.2019.MAX.csv", as.is = TRUE)
+
+factor(dat17$phy, levels = c('L', 'M', 'H')) -> dat17$phy
+dat17.split <- split(dat17, dat17$type)
+dat18.split <- split(dat18, dat18$type)
+dat19.split <- split(dat19, dat19$type)
+```
+
+#Plot PhyD and SR by phyD
+#PLOT SPECIES RICHNESS
+```{r}
+#############SPECIES RICHNESS #######################################
+Srichness <- as.data.frame(cbind("planted"=dat17.split$Seed$SR_planted, "2017"=dat17.split$Seed$SR_observed, "phyD"=dat17.split$Seed$phyD, "2018"=dat18.split$Seed$SR_observed, "2019"= dat19.split$Seed$SR_observed))
+factor(Srichness$phyD, levels = c('L', 'M', 'H')) -> Srichness$phyD
+Srichness.m <- melt(Srichness, id.vars='phyD', measure.vars=c('planted','2017', '2018', "2019"))
+as.numeric(as.character(Srichness.m$value)) -> Srichness.m$value
+
+names(Srichness.m) <- c("phyD", "year", "SR")
+Srichness.m$type <- "seed"
+
+
+##PLug
+SrichnessPlug <- as.data.frame(cbind("planted"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "phyD"=dat17.split$Plug$phyD, "2018"=dat18.split$Plug$SR_observed, "2019"= dat19.split$Plug$SR_observed))
+factor(SrichnessPlug$phyD, levels = c('L', 'M', 'H')) -> SrichnessPlug$phyD
+SrichnessPlug <- melt(SrichnessPlug, id.vars='phyD', measure.vars=c('planted','2017', '2018', "2019"))
+names(SrichnessPlug) <- c("phyD", "year", "SR")
+
+SrichnessPlug$type <- "plug"
+
+SRdat <- rbind(Srichness.m, SrichnessPlug)
+as.numeric(SRdat$SR) -> SRdat$SR
+
+gsub("2017",  "Year 1", SRdat$year) -> SRdat$year
+gsub("2018",  "Year 2", SRdat$year)-> SRdat$year
+gsub("2019",  "Year 3", SRdat$year) -> SRdat$year
+
+levels(SRdat$phyD) <- c("Low PD", "Medium PD", "High PD")
+#Srichness.means.by.year <- SRdat %>%
+#  group_by(year, type) %>%
+#  summarize(Mean=mean(SR), SD=sd(SR))
+
+
+
+#fitPD <- glmmTMB(MNTDses ~ year + type + phyD + (1|rep/plot) + (1|block), data=PDses.dat, family=gaussian)
+
+
+
+Srichness.plot <- ggplot(SRdat, aes(x=year, y=SR, group=interaction(type, year))) + geom_boxplot(aes(fill = type)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~phyD) +theme_bw()
+
+SRPLOT <- Srichness.plot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+       
+#ggsave(file="../OUT/Srichness.plot.pdf", width=180, height=180/3, units = "mm")
+```
+
+#SR by FD
+```{r}
+##############SR given FD
+FD_Srichness <- as.data.frame(cbind("planted"=dat17.split$Seed$SR_planted, "2017"=dat17.split$Seed$SR_observed, "FD"=dat17.split$Seed$trtD, "2018"=dat18.split$Seed$SR_observed, "2019"= dat19.split$Seed$SR_observed))
+
+factor(FD_Srichness$FD, levels = c('L', 'H')) -> FD_Srichness$FD
+
+FD_SR <- melt(FD_Srichness, id.vars='FD', measure.vars=c('planted','2017', "2018", "2019"))
+as.numeric(as.character(FD_SR$value)) -> FD_SR$value
+FD_SR$type <- "seed"
+####
+FD_SrichnessPlug <- as.data.frame(cbind("planted"=dat17.split$Plug$SR_planted, "2017"=dat17.split$Plug$SR_observed, "FD"=dat17.split$Plug$trtD, "2018"=dat18.split$Plug$SR_observed, "2019"= dat19.split$Plug$SR_observed))
+factor(FD_SrichnessPlug$FD, levels = c('L', 'H')) -> FD_SrichnessPlug$FD
+
+FD_SRplug <- melt(FD_SrichnessPlug, id.vars='FD', measure.vars=c('planted','2017', "2018", "2019"))
+as.numeric(as.character(FD_SRplug$value)) -> FD_SRplug$value
+FD_SRplug$type <- "plug"
+
+SRdat_FD <- rbind(FD_SR, FD_SRplug)
+names(SRdat_FD) <- c("FD", "year", "SR", "type")
+gsub("2017",  "Year 1", SRdat_FD$year) -> SRdat_FD$year
+gsub("2018",  "Year 2", SRdat_FD$year)-> SRdat_FD$year
+gsub("2019",  "Year 3", SRdat_FD$year) -> SRdat_FD$year
+levels(SRdat_FD$FD) <- c("Low FD", "High FD", "")
+
+#Srichness.by.FD <- FD_SR %>%
+#  group_by(variable, FD) %>%
+#  summarize(Mean=mean(value), SD=sd(value))
+
+FD_SRplot <- ggplot(SRdat_FD, aes(x=year, y=SR, group=interaction(type, year))) + geom_boxplot(aes(fill = type)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~FD, drop=FALSE) +theme_bw()
+
+SRPLOT_FD <- FD_SRplot + labs(y ="SR observed", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+       
+
+###PLOT PhyD and FD SR plots
+cowplot::plot_grid(SRPLOT, SRPLOT_FD, labels = "auto", ncol=1) -> Fig1.SR
+Fig1.SR
+#ggsave(Fig1.SR, file="../OUT/Fig2.SR.pdf")
+#ggsave(Fig1.SR, file="../OUT/Srichness.plot.pdf", width=180, height=180/2, units = "mm")
+
+```
+
+#TTest by Treatment
+```{r}
+SRT<- subset(dat19, select = c("plot", "type", "SR_observed") )
+SRT2 <- left_join(SRT, mix, by = c("plot", "type"))
+strsplit(SRT2$rep, ".", fixed = TRUE) -> rep
+as.factor(sapply(rep, "[", 2)) -> SRT2$mix
+#factor(PDses.dat$phyD, levels = c('L', 'M', 'H')) -> PDses.dat$phyD
+#factor(PDses.dat$trtD, levels = c('L', 'H')) -> PDses.dat$trtD
+split(SRT2, SRT2$type) -> SRT2t
+
+SRT2t$Seed[order(SRT2t$Seed$mix),] -> SRT2t$Seed
+split(SRT2t$Seed, SRT2t$Seed$phyD) -> SeedPD
+
+SRT2t$Plug[order(SRT2t$Plug$mix),] -> SRT2t$Plug
+split(SRT2t$Plug, SRT2t$Plug$phyD) -> PlugPD
+
+#By PD treatment:
+t.test(SeedPD$L$SR_observed, PlugPD$L$SR_observed, paired = TRUE, alternative = "two.sided") #t = -1.2817, df = 23, p-value = 0.2127
+t.test(SeedPD$M$SR_observed, PlugPD$M$SR_observed, paired = TRUE, alternative = "two.sided") #t = -3.7449, df = 23, p-value = 0.001058
+t.test(SeedPD$H$SR_observed, PlugPD$H$SR_observed, paired = TRUE, alternative = "two.sided") #t = -3.6667, df = 23, p-value = 0.001282
+
+#By FD treatment:
+split(SRT2t$Seed, SRT2t$Seed$trtD) -> SeedFD
+split(SRT2t$Plug, SRT2t$Plug$trtD) -> PlugFD
+t.test(SeedFD$L$SR_observed, PlugFD$L$SR_observed, paired = TRUE, alternative = "two.sided") #t = -4.8264, df = 35, p-value = 2.708e-05
+t.test(SeedFD$H$SR_observed, PlugFD$H$SR_observed, paired = TRUE, alternative = "two.sided") #t = -2.2414, df = 35, p-value = 0.03144
+```
+
+
+```{r}
+#########################################
+######### MNTD_SES 
+############################################################
+MNTD_SES.phyd <- as.data.frame(cbind("planted"=dat17.split$Seed$MNTD_SES_planted, "2017"=dat17.split$Seed$MNTD_SES_observed, "phyD"=dat17.split$Seed$phyD, "plot" = dat17.split$Seed$plot, "2018"=dat18.split$Seed$MNTD_SES_observed,  "2019"=dat19.split$Seed$MNTD_SES_observed))
+
+factor(MNTD_SES.phyd$phyD, levels = c('L', 'M', 'H')) -> MNTD_SES.phyd$phyD
+mntd.m <- melt(MNTD_SES.phyd, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(mntd.m$value)) -> mntd.m$value
+mntd.m$type <- "seed"
+
+#PLUG
+MNTD_SES.phydPLUG <- as.data.frame(cbind("planted"=dat17.split$Plug$MNTD_SES_planted, "2017"=dat17.split$Plug$MNTD_SES_observed, "phyD"=dat17.split$Plug$phyD, "plot" = dat17.split$Plug$plot, "2018"=dat18.split$Plug$MNTD_SES_observed,  "2019"=dat19.split$Plug$MNTD_SES_observed))
+
+factor(MNTD_SES.phydPLUG$phyD, levels = c('L', 'M', 'H')) -> MNTD_SES.phydPLUG$phyD
+mntd.plug <- melt(MNTD_SES.phydPLUG, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(mntd.plug$value)) -> mntd.plug$value
+mntd.plug$type <- "plug"
+
+#BIND
+mntd.dat <- rbind(mntd.m, mntd.plug)
+names(mntd.dat) <- c("PD", "year", "MNTDses", "type")
+gsub("2017",  "Year 1", mntd.dat$year) -> mntd.dat$year
+gsub("2018",  "Year 2", mntd.dat$year)-> mntd.dat$year
+gsub("2019",  "Year 3", mntd.dat$year) -> mntd.dat$year
+levels(mntd.dat$PD) <- c("Low PD", "Medium PD","High PD")
+
+
+#PLOT
+MNTDses.plot <-ggplot(mntd.dat, aes(x=year, y=MNTDses, group=interaction(type, year)))  + geom_boxplot(aes(fill = type)) +  theme_bw() + scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~PD, drop=FALSE) +
+labs(y="MNTD_ses", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave(filename = "../OUT/MNTDses.Seed.png", plot = MNTD.plot, height = 4, width=8)
+
+##########ABUNDANCE WEIGHTED MNTDses###########
+#
+MNTD.phydAW <- as.data.frame(cbind("2017"=dat17.split$Seed$MNTD_SES_abundance.weighted_observed, "phyD"=dat17.split$Seed$phyD, "2018"=dat18.split$Seed$MNTD_SES_abundance.weighted_observed,  "2019"=dat19.split$Seed$MNTD_SES_abundance.weighted_observed))
+factor(MNTD.phydAW$phyD, levels = c('L', 'M', 'H')) -> MNTD.phydAW$phyD
+mntd.aw <- melt(MNTD.phydAW, id.vars='phyD', measure.vars=c('2017','2018', "2019"))
+as.numeric(as.character(mntd.aw$value)) -> mntd.aw$value
+mntd.aw$type <- "seed"
+
+##Plug
+MNTD.phydAWplug <- as.data.frame(cbind("2017"=dat17.split$Plug$MNTD_SES_abundance.weighted_observed, "phyD"=dat17.split$Plug$phyD, "2018"=dat18.split$Plug$MNTD_SES_abundance.weighted_observed,  "2019"=dat19.split$Plug$MNTD_SES_abundance.weighted_observed))
+factor(MNTD.phydAWplug$phyD, levels = c('L', 'M', 'H')) -> MNTD.phydAWplug$phyD
+mntd.awplug <- melt(MNTD.phydAWplug, id.vars='phyD', measure.vars=c('2017','2018', "2019"))
+as.numeric(as.character(mntd.awplug$value)) -> mntd.awplug$value
+mntd.awplug$type <- "plug"
+
+#BIND
+mntd.AW.dat <- rbind(mntd.aw, mntd.awplug)
+names(mntd.AW.dat) <- c("PD", "year", "MNTDsesAB", "type")
+gsub("2017",  "Year 1", mntd.AW.dat$year) -> mntd.AW.dat$year
+gsub("2018",  "Year 2", mntd.AW.dat$year)-> mntd.AW.dat$year
+gsub("2019",  "Year 3", mntd.AW.dat$year) -> mntd.AW.dat$year
+levels(mntd.AW.dat$PD) <- c("Low PD", "Medium PD","High PD")
+
+
+MNTDsesAB.plot <- ggplot(mntd.AW.dat, aes(x=year, y=MNTDsesAB, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~PD, drop=FALSE) + labs(y="aw MNTD_ses", x="")  
+
+```
+
+##PD_SES
+```{r}
+##############PD-ses############################
+PDsesS <- as.data.frame(cbind("planted" = dat17.split$Seed$PD_SES_planted, "2017"= dat17.split$Seed$PD_SES_observed, "phyD"= dat17.split$Seed$phyD,  "2018"=dat18.split$Seed$PD_SES_observed, "2019" = dat19.split$Seed$PD_SES_observed))
+
+factor(PDsesS$phyD, levels = c('L', 'M', 'H')) -> PDsesS$phyD
+PDsesS <- melt(PDsesS, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(PDsesS$value)) -> PDsesS$value
+PDsesS$type <- "seed"
+
+PDsesP <- as.data.frame(cbind("planted" = dat17.split$Plug$PD_SES_planted, "2017"= dat17.split$Plug$PD_SES_observed, "phyD"= dat17.split$Plug$phyD,  "2018"=dat18.split$Plug$PD_SES_observed, "2019" = dat19.split$Plug$PD_SES_observed))
+factor(PDsesP$phyD, levels = c('L', 'M', 'H')) -> PDsesP$phyD
+PDsesP <- melt(PDsesP, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(PDsesP$value)) -> PDsesP$value
+PDsesP$type <- "plug"
+
+#BIND
+PDses.dat <- rbind(PDsesS, PDsesP)
+names(PDses.dat) <- c("PD", "year", "PDses", "type")
+gsub("2017",  "Year 1", PDses.dat$year) -> PDses.dat$year
+gsub("2018",  "Year 2", PDses.dat$year)-> PDses.dat$year
+gsub("2019",  "Year 3", PDses.dat$year) -> PDses.dat$year
+levels(PDses.dat$PD) <- c("Low PD", "Medium PD","High PD")
+
+PDses.plot <- ggplot(PDses.dat, aes(x=year, y=PDses, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~PD, drop=FALSE) + labs(y="PD_ses", x="")  
+#############ABUNDANCE WEIGHTED PDses#############
+#NA
+
+
+```
+
+#MPDses by PD
+```{r}
+##############MPD-ses############################
+MPDs <- as.data.frame(cbind("planted" = dat17.split$Seed$MPD_SES_planted, "2017"= dat17.split$Seed$MPD_SES_observed, "phyD"= dat17.split$Seed$phyD,  "2018"=dat18.split$Seed$MPD_SES_observed, "2019" = dat19.split$Seed$MPD_SES_observed))
+
+factor(MPDs$phyD, levels = c('L', 'M', 'H')) -> MPDs$phyD
+MPDS <- melt(MPDs, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(MPDS$value)) -> MPDS$value
+MPDS$type <- "seed"
+
+MPDP <- as.data.frame(cbind("planted" = dat17.split$Plug$MPD_SES_planted, "2017"= dat17.split$Plug$MPD_SES_observed, "phyD"= dat17.split$Plug$phyD,  "2018"=dat18.split$Plug$MPD_SES_observed, "2019" = dat19.split$Plug$MPD_SES_observed))
+factor(MPDP$phyD, levels = c('L', 'M', 'H')) -> MPDP$phyD
+MPDp <- melt(MPDP, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(MPDp$value)) -> MPDp$value
+MPDp$type <- "plug"
+
+#BIND
+MPD.dat <- rbind(MPDS, MPDp)
+names(MPD.dat) <- c("PD", "year", "MPDses", "type")
+gsub("2017",  "Year 1", MPD.dat$year) -> MPD.dat$year
+gsub("2018",  "Year 2", MPD.dat$year)-> MPD.dat$year
+gsub("2019",  "Year 3", MPD.dat$year) -> MPD.dat$year
+levels(MPD.dat$PD) <- c("Low PD", "Medium PD","High PD")
+
+MPDses.plot <- ggplot(MPD.dat, aes(x=year, y=MPDses, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~PD, drop=FALSE) + labs(y="MPD_ses", x="") 
+
+#######################
+##MPD ses abundance-weighted
+MPDsesAW <- as.data.frame(cbind("2017"= dat17.split$Seed$MPD_SES_abundance.weighted_observed, "phyD"= dat17.split$Seed$phyD,  "2018"=dat18.split$Seed$MPD_SES_abundance.weighted_observed, "2019" = dat19.split$Seed$MPD_SES_abundance.weighted_observed))
+
+factor(MPDsesAW$phyD, levels = c('L', 'M', 'H')) -> MPDsesAW$phyD
+MPDSesAW <- melt(MPDsesAW, id.vars='phyD', measure.vars=c('2017','2018', "2019"))
+as.numeric(as.character(MPDSesAW$value)) -> MPDSesAW$value
+MPDSesAW$type <- "seed"
+
+MPDsesAWp <- as.data.frame(cbind("2017"= dat17.split$Plug$MPD_SES_observed, "phyD"= dat17.split$Plug$phyD,  "2018"=dat18.split$Plug$MPD_SES_abundance.weighted_observed, "2019" = dat19.split$Plug$MPD_SES_abundance.weighted_observed))
+
+factor(MPDsesAWp$phyD, levels = c('L', 'M', 'H')) -> MPDsesAWp$phyD
+
+MPDsesAWP <- melt(MPDsesAWp, id.vars='phyD', measure.vars=c('2017','2018', "2019"))
+as.numeric(as.character(MPDsesAWP$value)) -> MPDsesAWP$value
+MPDsesAWP$type <- "plug"
+#BIND
+MPD.sesAW.dat <- rbind(MPDSesAW, MPDsesAWP)
+names(MPD.sesAW.dat) <- c("PD", "year", "MPDsesAW", "type")
+gsub("2017",  "Year 1", MPD.sesAW.dat$year) -> MPD.sesAW.dat$year
+gsub("2018",  "Year 2", MPD.sesAW.dat$year)-> MPD.sesAW.dat$year
+gsub("2019",  "Year 3", MPD.sesAW.dat$year) -> MPD.sesAW.dat$year
+levels(MPD.sesAW.dat$PD) <- c("Low PD", "Medium PD","High PD")
+
+MPDsesAW.plot <- ggplot(MPD.sesAW.dat, aes(x=year, y=MPDsesAW, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~PD, drop=FALSE) + labs(y="MPD_ses (AW)", x="") 
+
+
+
+#######################
+#RAW MPD
+MPDs <- as.data.frame(cbind("planted" = dat17.split$Seed$MPD_planted, "2017"= dat17.split$Seed$MPD_observed, "phyD"= dat17.split$Seed$phyD,  "2018"=dat18.split$Seed$MPD_observed, "2019" = dat19.split$Seed$MPD_observed))
+
+factor(MPDs$phyD, levels = c('L', 'M', 'H')) -> MPDs$phyD
+MPDS <- melt(MPDs, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(MPDS$value)) -> MPDS$value
+MPDS$type <- "seed"
+
+MPDP <- as.data.frame(cbind("planted" = dat17.split$Plug$MPD_planted, "2017"= dat17.split$Plug$MPD_observed, "phyD"= dat17.split$Plug$phyD,  "2018"=dat18.split$Plug$MPD_observed, "2019" = dat19.split$Plug$MPD_observed))
+factor(MPDP$phyD, levels = c('L', 'M', 'H')) -> MPDP$phyD
+MPDp <- melt(MPDP, id.vars='phyD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(MPDp$value)) -> MPDp$value
+MPDp$type <- "plug"
+
+#BIND
+MPD.dat <- rbind(MPDS, MPDp)
+names(MPD.dat) <- c("PD", "year", "MPDses", "type")
+gsub("2017",  "Year 1", MPD.dat$year) -> MPD.dat$year
+gsub("2018",  "Year 2", MPD.dat$year)-> MPD.dat$year
+gsub("2019",  "Year 3", MPD.dat$year) -> MPD.dat$year
+levels(MPD.dat$PD) <- c("Low PD", "Medium PD","High PD")
+
+MPDses.plot <- ggplot(MPD.dat, aes(x=year, y=MPDses, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("plug"="#5AAE61", "seed" ="#762A83")) + facet_grid(.~PD, drop=FALSE) + labs(y="MPD_ses", x="") 
+```
+
+
+#MPDses by FD
+```{r}
+#MPDses Figure for supplement
+
+MPD_FD <- as.data.frame(cbind("planted" = dat17.split$Seed$MPD_SES_planted, "2017"= dat17.split$Seed$MPD_SES_observed, "FD"= dat17.split$Seed$trtD, "2018"=dat18.05.split$Seed$MPD_SES_observed, "2019" = dat19.split$Seed$MPD_SES_observed))
+
+as.numeric(as.character(MPD_FD$planted)) -> MPD_FD$planted
+as.numeric(as.character(MPD_FD$'2017')) -> MPD_FD$'2017'
+as.numeric(as.character(MPD_FD$'2018')) -> MPD_FD$'2018'
+as.numeric(as.character(MPD_FD$'2019')) -> MPD_FD$'2019'
+
+factor(MPD_FD$FD, levels = c('L', 'H')) -> MPD_FD$FD
+MPD_FD.m <- melt(MPD_FD, id.vars='FD', measure.vars=c('planted','2017', "2018", "2019"))
+
+ggplot(MPD_FD.m, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~FD)-> FD.MPD.Plot
+FD.MPD.Plot <- FD.MPD.Plot + labs(x="year",  y ="MPD_ses")  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))+ 
+  background_grid()
+
+#MNTDses given FD
+MNTD_FD <- as.data.frame(cbind("planted"=dat17.split$Seed$MNTD_SES_planted, "2017"=dat17.split$Seed$MNTD_SES_observed, "FD"=dat17.split$Seed$trtD,"2018"=dat18.05.split$Seed$MNTD_SES_observed,  "2019"=dat19.split$Seed$MNTD_SES_observed))
+
+factor(MNTD_FD$FD, levels = c('L', 'H')) -> MNTD_FD$FD
+
+MNTD_FD.m <- melt(MNTD_FD, id.vars='FD', measure.vars=c('planted','2017','2018', "2019"))
+as.numeric(as.character(MNTD_FD.m$value)) -> MNTD_FD.m$value
+
+ggplot(MNTD_FD.m, aes(x=variable, y=value)) +geom_boxplot() +facet_grid(.~FD)-> MNTD.FDplot
+MNTD.FDplot <- MNTD.FDplot + labs(y="MNTD_ses", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1))+ 
+  background_grid()
+
+
+```
+
+#FUNCTIONAL DIVERSITY (FDISP)
+```{r}
+#load P/A matrix and cover matrices:
+#df.cover and df.PA from 00.load.for.anlyses
+
+#ADD FD to model
+SRobs <- c(dat17$SR_planted, dat17$SR_observed, dat18$SR_observed, dat19$SR_observed)
+#df.PA has  year 2016 = as planted
+df.PA <- df.PA[with(df.PA, order(year, plot)),] # order by year and plot to match SRobs
+df.PA$SR <- SRobs
+
+#take dat17.split$Seed$MPD_planted and merge by plot#
+df.PA <- merge(df.PA, dat17[, c("plot", "MPD_planted")], by="plot")
+df.PA <- merge(df.PA, dat17[, c("plot", "MNTD_planted")], by="plot")
+df.PA.copy <- df.PA
+
+df.PA <- df.PA %>%
+  select(MNTD_planted, MPD_planted, SR, everything())
+
+#######################FDISP on P/A
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', as.is = T, row.names = 1)
+rownames(traits.mat)[which(rownames(traits.mat) == "Symphyotrichum_novae-angliae")] <-
+  "Symphyotrichum_novae.angliae"
+rownames(traits.mat) -> traits.mat$Species
+
+MICEtraits.mat <- traits.mat %>% filter (Species %in% colnames(df.PA[9:ncol(df.PA)-1]))
+MICEtraits.mat$Species -> rownames(MICEtraits.mat)
+MICEtraits.mat <- subset(MICEtraits.mat, select = -Species)
+dist(MICEtraits.mat) -> dis.trait.diss
+as.matrix(df.PA[9:ncol(df.PA)-1]) -> comm
+
+##Fdisp can include P/A or abudance-weighted.
+
+fdisp(dis.trait.diss, comm, tol = 1e-07) -> fd
+unlist(fd$FDis) -> df.PA$FD
+split(df.PA, df.PA$year) -> fdDF
+#group/order by new.rep/sp
+fdDF$`2019` -> fd
+split(fd, fd$type) -> fd
+fd$Seed[order(fd$Seed$new.rep),] -> fd$Seed
+fd$Plug[order(fd$Plug$new.rep),] -> fd$Plug
+
+t.test(fd$Seed$FD, fd$Plug$FD, paired = TRUE, alternative = "two.sided")
+
+FDdat <- subset(df.PA, select= c(year, type, fd, FD))
+factor(FDdat$fd, levels = c('L','H')) -> FDdat$fd
+levels(FDdat$fd) <- c("Low FD", "HighFD", "")
+
+FDisp.plot <- ggplot(FDdat, aes(x=year, y=FD, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("Plug"="#5AAE61", "Seed" ="#762A83")) + facet_grid(.~fd, drop=FALSE) + labs(y="FDisp", x="")  
+#
+
+ ####################### ####################### ####################### 
+##FDISP on Abundnace -weighted #######################
+#df.cover and df.PA from 00.load.for.anlyses
+
+#ADD FD to model
+SRobs.cov <- c(dat17$SR_observed, dat18$SR_observed, dat19$SR_observed)
+#df.PA has  year 2016 = as planted
+#df.cover = 2017, 
+df.cover2 <- df.cover[with(df.cover, order(year, plot)),] # order by year and plot to match SRobs
+df.cover2$SR <- SRobs.cov
+
+##Fdisp can include P/A or abudance-weighted.
+as.matrix(df.cover2[8:(ncol(df.cover2)-1)]) -> commAB
+fdisp(dis.trait.diss, commAB, tol = 1e-07) -> fd.ab
+unlist(fd.ab$FDis) -> df.cover2$FD
+split(df.cover2, df.cover2$year) -> fdAW.DF
+#group/order by new.rep/sp
+fdAW.DF$`2019` -> fdaw
+split(fdaw, fdaw$type) -> fdaw
+fdaw$Seed[order(fdaw$Seed$new.rep),] -> fdaw$Seed
+fdaw$Plug[order(fdaw$Plug$new.rep),] -> fdaw$Plug
+
+t.test(fdaw$Seed$FD, fdaw$Plug$FD, paired = TRUE, alternative = "two.sided")
+
+###PLOT
+FD.AW.dat <- subset(df.cover2, select= c(year, type, fd, FD))
+factor(FD.AW.dat$fd, levels = c('L','H')) -> FD.AW.dat$fd
+levels(FD.AW.dat$fd) <- c("Low FD", "HighFD", "")
+
+FDispAW.plot <- ggplot(FD.AW.dat, aes(x=year, y=FD, group=interaction(type, year))) + theme_bw() + geom_boxplot(aes(fill = type))  + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) +  scale_fill_manual(values=c("Plug"="#5AAE61", "Seed" ="#762A83")) + facet_grid(.~fd, drop=FALSE) + labs(y="aw FDisp", x="")  
+#
+
+
+##
+
+
+```
+
+```{r}
+
+cowplot::plot_grid(PDses.plot, MNTDses.plot, FDisp.plot, labels="auto", ncol=1) -> DiversityPlots
+
+#ggsave(DiversityPlots, width = 8, height = 11,units = c("in"), file="../OUT/Figure.Diversity.pdf")
+
+#ggsave(DiversityPlots, file="../OUT/Fig4.Diversity.png")
+
+#######SUPPLMENTAL
+cowplot::plot_grid(MNTDsesAB.plot, MPDsesAW.plot, MPDses.plot, FDispAW.plot,labels="auto", ncol=1) -> SupplementalDiversityPlots
+
+ggsave(SupplementalDiversityPlots, width = 8, height = 11,units = c("in"), file="../OUT/FigS.Diversity.pdf")
+
+
+
+```
+
+
+
+
+```{r}
+plot_grid(FD_SRplot, MNTD.FDplot, FD.MPD.Plot, ncol=1, labels="auto") -> FD_diversityPlots
+#ggsave(FD_diversityPlots, file="../OUT/FD_diversityPlots.png")
+#ggsave(FD_diversityPlots, file="../OUT/FD_diversityPlots.pdf")
+
+```
+
+##PAIRED TTESTs for seed vs plug
+```{r}
+#sp is replicate here
+#seed
+dat17seed <- as.data.frame(cbind("plot"= dat17.split$Seed$plot, "rep"= dat17.split$Seed$sp))
+
+SRobsS <- as.data.frame(cbind("plot"= dat19.split$Seed$plot, "SRseed"= dat19.split$Seed$SR_observed))
+as.factor(SRobsS$plot) -> SRobsS$plot
+SRseed<- left_join(SRobsS, dat17seed, by="plot") #add rep based on plot#
+SRseed<- setorder(SRseed, rep) #order by rep
+#add in treatment level:
+
+
+#plug
+dat17plug <- as.data.frame(cbind("plot"= dat17.split$Plug$plot, "rep"= dat17.split$Plug$sp))
+SRobsP <- as.data.frame(cbind("plot"= dat19.split$Plug$plot, "SRplug"= dat19.split$Plug$SR_observed))
+as.factor(SRobsP$plot) -> SRobsP$plot
+SRplug <- left_join(SRobsP, dat17plug, by="plot")
+SRplug<- setorder(SRplug, rep) #order by rep
+
+
+#paired ttest
+t.test(SRobsS$SRseed, SRobsP$SRplug, paired = TRUE, alternative = "two.sided")
+
+t.test(dat19.split$Seed$SR_observed, dat19.split$Plug$SR_observed, paired = TRUE, alternative = "two.sided")
+
+#Break up by treatment group:
+
+
+```
+
+
+
+
+```{r}
+##PD
+PDObs <- dat19.split$Seed$PD_observed
+PDObp <- dat19.split$Plug$PD_observed
+
+t.test(PDObs, PDObp, paired = TRUE, alternative = "two.sided")
+
+####PD_ses_planted
+PDsesObs <- dat19.split$Seed$PD_SES_observed
+PDsesObp <- dat19.split$Plug$PD_SES_observed
+t.test(PDsesObs, PDsesObp, paired = TRUE, alternative = "two.sided")
+
+#MNTD
+MNTDObs <- dat19.split$Seed$MNTD_observed
+MNTDObsP <- dat19.split$Plug$MNTD_observed
+t.test(MNTDObs, MNTDObsP, paired = TRUE, alternative = "two.sided")
+
+#MNTD abundance weighted
+MNTDAWs <- dat19.split$Seed$MNTD_abundance.weighted_observed
+mean(MNTDAWs)
+sd(MNTDAWs)
+MNTDAWP <- dat19.split$Plug$MNTD_abundance.weighted_observed
+mean(MNTDAWP)
+sd(MNTDAWP)
+t.test(MNTDAWs, MNTDAWP, paired = TRUE, alternative = "two.sided")
+
+
+#MNTDses
+MNTDsesObs <-  dat19.split$Seed$MNTD_SES_observed
+MNTDsesObsP <- dat19.split$Plug$MNTD_SES_observed
+t.test(MNTDsesObs, MNTDsesObsP, paired = TRUE, alternative = "two.sided")
+
+#MNTDses abundance weighted
+MNTDsesAWS <-  dat19.split$Seed$MNTD_SES_abundance.weighted_observed
+mean(MNTDsesAWS)
+sd(MNTDsesAWS)
+MNTDsesAWP <- dat19.split$Plug$MNTD_SES_abundance.weighted_observed
+mean(MNTDsesAWP)
+sd(MNTDsesAWP)
+t.test(MNTDsesAWS, MNTDsesAWP, paired = TRUE, alternative = "two.sided")
+
+
+```
