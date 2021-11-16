@@ -1,0 +1,223 @@
+---
+title: "00d.PD/FD Models"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lme4)
+library(emmeans)
+library(tidyverse)
+library(car)
+library(dplyr)
+library(reshape2)
+
+```
+
+##Test for differences in PDses by plot type and treatment
+```{r}
+##############PD-ses############################
+newDatplanted <- subset(dat17, select = c(plot, type, sp, block, phyD, trtD, PD_SES_planted))
+newDatplanted$year <- "2016"                     
+names(newDatplanted)[7] <- "PDses"  
+#reorder
+newDatplanted2 <- newDatplanted[,c(1,8,2,3,4,5,6,7)]
+newDat17 <- subset(dat17, select = c(plot, year, type, sp, block, phyD, trtD, PD_SES_observed))
+names(newDat17)[8] <- "PDses"
+
+#add meta to 2018/2019 dat missing some columns
+newDat18 <- subset(dat18, select = c(plot, type, PD_SES_observed))
+newDat18$year <- "2018"
+newDat19 <- subset(dat19, select = c(plot, type, PD_SES_observed))
+newDat19$year <- "2019"
+newDat <- rbind(newDat18, newDat19)
+
+#add rep and block to 18/19 data
+block <- read.delim("../DATA/plots.blocking.v4.2016-08-03.tsv")
+block <- subset(block, select=c(PLOT, block_BS.mod))
+code <- read.csv(file ="../DATA/plot.PD.codes.csv", as.is = TRUE, sep=",") 
+#strsplit(code$rep, ".", fixed = TRUE) -> new.rep
+#sapply(new.rep, "[", 2) -> code$new.rep
+code$phyD <-  data.frame(phyD = substr(code$Code,1,1)) 
+unlist(code$phyD) -> code$phyD
+code$trtD <-  data.frame(trtD = substr(code$Code,2,2)) 
+unlist(code$trtD) -> code$trtD
+mix <- left_join(code, block, by = c("plot" = "PLOT"))
+
+newDat2 <- left_join(newDat, mix, by = c("plot", "type"))
+newDat3 <- subset(newDat2, select = c(plot, year, type, rep, block_BS.mod, phyD, trtD, PD_SES_observed))
+names(newDat3) <- names(newDat17)
+PDses.dat <- rbind(newDatplanted2, newDat17, newDat3)
+#drop .rep2 and rep1 from sp, make factor
+strsplit(PDses.dat$sp, ".", fixed = TRUE) -> rep
+as.factor(sapply(rep, "[", 2)) -> PDses.dat$rep
+factor(PDses.dat$phyD, levels = c('L', 'M', 'H')) -> PDses.dat$phyD
+factor(PDses.dat$trtD, levels = c('L', 'H')) -> PDses.dat$trtD
+PDses.dat$plot <- as.factor(PDses.dat$plot)
+PDses.dat$type <- as.factor(PDses.dat$type)
+
+#MODELS 
+#1|site/block if blocks within site
+#1|rep/plot since plots within mixtures
+fitPD <- lmer(PDses ~ year: type: phyD + (1|rep/plot) + (1|block), data=PDses.dat)
+summary(fitPD)
+
+emmeans(fitPD, pairwise ~ year : type : phyD) 
+
+
+#plot
+myplot <- ggplot(PDses.dat, aes(x=year, y=PDses, group=interaction(type, year))) + geom_boxplot(aes(fill = type)) + scale_fill_manual(values=c("Plug"="#5AAE61", "Seed" ="#762A83")) + facet_grid(.~phyD) + theme_bw()
+
+myplot2 <- myplot + labs(y ="PDses", x="") + theme(axis.text.x=element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+
+##########################################
+#Within plot-type contrasts
+##########################################
+split(PDses.dat, PDses.dat$type) -> SPDses
+
+SsfitPD <- lmer(PDses ~ year : phyD + (1|rep/plot) + (1|block), data=SPDses$Seed)
+emmeans(SsfitPD, pairwise ~ year : phyD) 
+#emmeans(SsfitPD, pairwise ~ phyD | year) 
+
+
+SpfitPD <- lmer(PDses ~ year :phyD + (1|rep/plot), data=SPDses$Plug)
+emmeans(SpfitPD, pairwise ~ year : phyD) 
+```
+
+```{r}
+##############MNTD-ses############################
+newDatplanted <- subset(dat17, select = c(plot, type, sp, block, phyD, trtD, MNTD_SES_planted))
+newDatplanted$year <- "2016"                     
+names(newDatplanted)[7] <- "MNTDses"  
+#reorder
+newDatplanted2 <- newDatplanted[,c(1,8,2,3,4,5,6,7)]
+newDat17 <- subset(dat17, select = c(plot, year, type, sp, block, phyD, trtD, MNTD_SES_observed))
+names(newDat17)[8] <- "MNTDses"
+
+#add meta to 2018/2019 dat missing some columns
+newDat18 <- subset(dat18, select = c(plot, type, MNTD_SES_observed))
+newDat18$year <- "2018"
+newDat19 <- subset(dat19, select = c(plot, type, MNTD_SES_observed))
+newDat19$year <- "2019"
+newDat <- rbind(newDat18, newDat19)
+
+#add rep and block to 18/19 data
+block <- read.delim("../DATA/plots.blocking.v4.2016-08-03.tsv")
+block <- subset(block, select=c(PLOT, block_BS.mod))
+code <- read.csv(file ="../DATA/plot.PD.codes.csv", as.is = TRUE, sep=",") 
+#strsplit(code$rep, ".", fixed = TRUE) -> new.rep
+#sapply(new.rep, "[", 2) -> code$new.rep
+code$phyD <-  data.frame(phyD = substr(code$Code,1,1)) 
+unlist(code$phyD) -> code$phyD
+code$trtD <-  data.frame(trtD = substr(code$Code,2,2)) 
+unlist(code$trtD) -> code$trtD
+mix <- left_join(code, block, by = c("plot" = "PLOT"))
+
+newDat2 <- left_join(newDat, mix, by = c("plot", "type"))
+newDat3 <- subset(newDat2, select = c(plot, year, type, rep, block_BS.mod, phyD, trtD, MNTD_SES_observed))
+names(newDat3) <- names(newDat17)
+MNTDses.dat <- rbind(newDatplanted2, newDat17, newDat3)
+#drop .rep2 and rep1 from sp, make factor
+strsplit(MNTDses.dat$sp, ".", fixed = TRUE) -> rep
+as.factor(sapply(rep, "[", 2)) -> MNTDses.dat$rep
+factor(MNTDses.dat$phyD, levels = c('L', 'M', 'H')) -> MNTDses.dat$phyD
+factor(MNTDses.dat$trtD, levels = c('L', 'H')) -> MNTDses.dat$trtD
+MNTDses.dat$plot <- as.factor(MNTDses.dat$plot)
+MNTDses.dat$type <- as.factor(MNTDses.dat$type)
+
+#MODELS 
+#1|site/block if blocks within site
+#1|rep/plot since plots within mixtures
+#fitPD <- lmer(MNTDses ~ year + type + phyD + (1|rep/plot) + (1|block), data=PDses.dat)
+summary(fitPD)
+
+##########################################
+#Within plot-type contrasts
+##########################################
+split(MNTDses.dat, MNTDses.dat$type) -> SMNTDses
+
+SsfitMNTD <- lmer(MNTDses ~ year: phyD + (1|rep/plot) + (1|block), data=SMNTDses$Seed)
+emmeans(SsfitMNTD, pairwise ~ year: phyD) 
+#emmeans(SsfitMNTD, pairwise ~ phyD | year) 
+
+
+SpfitMNTD <- lmer(MNTDses ~ year: phyD + (1|rep/plot) + (1|block), data=SMNTDses$Plug)
+emmeans(SpfitMNTD, pairwise ~ year : phyD) 
+```
+
+```{r}
+##############MPD-ses############################
+newDatplanted <- subset(dat17, select = c(plot, type, sp, block, phyD, trtD, MPD_SES_planted))
+newDatplanted$year <- "2016"                     
+names(newDatplanted)[7] <- "MPDses"  
+#reorder
+newDatplanted2 <- newDatplanted[,c(1,8,2,3,4,5,6,7)]
+newDat17 <- subset(dat17, select = c(plot, year, type, sp, block, phyD, trtD, MPD_SES_observed))
+names(newDat17)[8] <- "MPDses"
+
+#add meta to 2018/2019 dat missing some columns
+newDat18 <- subset(dat18, select = c(plot, type, MPD_SES_observed))
+newDat18$year <- "2018"
+newDat19 <- subset(dat19, select = c(plot, type, MPD_SES_observed))
+newDat19$year <- "2019"
+newDat <- rbind(newDat18, newDat19)
+
+#add rep and block to 18/19 data
+block <- read.delim("../DATA/plots.blocking.v4.2016-08-03.tsv")
+block <- subset(block, select=c(PLOT, block_BS.mod))
+code <- read.csv(file ="../DATA/plot.PD.codes.csv", as.is = TRUE, sep=",") 
+#strsplit(code$rep, ".", fixed = TRUE) -> new.rep
+#sapply(new.rep, "[", 2) -> code$new.rep
+code$phyD <-  data.frame(phyD = substr(code$Code,1,1)) 
+unlist(code$phyD) -> code$phyD
+code$trtD <-  data.frame(trtD = substr(code$Code,2,2)) 
+unlist(code$trtD) -> code$trtD
+mix <- left_join(code, block, by = c("plot" = "PLOT"))
+
+newDat2 <- left_join(newDat, mix, by = c("plot", "type"))
+newDat3 <- subset(newDat2, select = c(plot, year, type, rep, block_BS.mod, phyD, trtD, MPD_SES_observed))
+names(newDat3) <- names(newDat17)
+MPDses.dat <- rbind(newDatplanted2, newDat17, newDat3)
+#drop .rep2 and rep1 from sp, make factor
+strsplit(MPDses.dat$sp, ".", fixed = TRUE) -> rep
+as.factor(sapply(rep, "[", 2)) -> MPDses.dat$rep
+factor(MPDses.dat$phyD, levels = c('L', 'M', 'H')) -> MPDses.dat$phyD
+factor(MPDses.dat$trtD, levels = c('L', 'H')) -> MPDses.dat$trtD
+MPDses.dat$plot <- as.factor(MPDses.dat$plot)
+MPDses.dat$type <- as.factor(MPDses.dat$type)
+
+#MODELS 
+#1|site/block if blocks within site
+#1|rep/plot since plots within mixtures
+#fitPD <- lmer(MNTDses ~ year + type + phyD + (1|rep/plot) + (1|block), data=PDses.dat)
+#summary(fitPD)
+
+##########################################
+#Within plot-type contrasts
+##########################################
+split(MPDses.dat, MPDses.dat$type) -> SMPDses.dat
+
+SsMPDses.dat <- lmer(MPDses ~ year: phyD + (1|rep/plot) + (1|block), data=SMPDses.dat$Seed)
+seed.emm <- emmeans(SsMPDses.dat, pairwise ~ year: phyD) 
+
+SpMPDses.dat <- lmer(MPDses ~ year: phyD + (1|rep/plot) + (1|block), data=SMPDses.dat$Plug)
+emmeans(SpMPDses.dat, pairwise ~ year : phyD) 
+
+```
+
+#FDis
+note: read in and format data from 00c.
+```{r}
+FDis.dat <- subset(df.PA, select = c(plot, year, type, new.rep, phyD, fd, FD))
+FDis.dat$new.rep <- as.factor(FDis.dat$new.rep)
+FDis.dat$plot <- as.factor(FDis.dat$plot)
+FDis.dat$fd <- as.factor(FDis.dat$fd)
+split(FDis.dat, FDis.dat$type) -> Fdis
+
+SsFdis <- lmer(FD ~ year: fd + (1|new.rep/plot), data=Fdis$Seed)
+emmeans(SsFdis, pairwise ~ year : fd) 
+
+SpFdis <- lmer(FD ~ year : fd + (1|new.rep/plot) , data=Fdis$Plug)
+emmeans(SpFdis, pairwise ~ year : fd) 
+```

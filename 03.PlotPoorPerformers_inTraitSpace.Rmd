@@ -1,0 +1,85 @@
+---
+title: "03.PlotPoorPerformers_inTraitSpace"
+output: html_document
+---
+#Plot species in trait space
+```{r}
+library(vegan)
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggtree)
+library(ggrepel)
+```
+
+#Plot which species performed poorly in functional trait space
+```{r}
+traits.mat <- read.csv('../DATA/ImputedMiceTraits.2016-01-06.csv', row.names = 1)
+setDT(traits.mat, keep.rownames = "Species")[]
+#replace "Symphyotrichum_novae.angliae" to "Symphyotrichum_novae-angliae"
+traits.mat$Species <- gsub("Symphyotrichum_novae-angliae", "Symphyotrichum_novae.angliae", traits.mat$Species)
+
+traits.mat <- traits.mat %>% filter (Species %in% names(as.planted[5:ncol(as.planted)])) 
+rownames(traits.mat) <- traits.mat$Species
+
+test.traits <- traits.mat
+#convert photosynthetic pathway:
+test.traits$photosyntheticPathway  <- ifelse(test.traits$photosyntheticPathway == "C3", 1,0)
+#test.traits <- subset(test.traits, select = -c(Species))
+test.traits <- subset(test.traits, select = -c(Species, Lifeform, wis_IL, habitClean))
+rownames(test.traits) <- traits.mat$Species
+Ord <- metaMDS(test.traits, maxit=10000, k=2, distance = "bray", autotransform = FALSE) #stress = 0.163257
+Ord <- metaMDS(test.traits, k=2, distance = "bray", maxit=1000000, previous.best = Ord, try = 40, autotransform = FALSE)
+
+Species.ord <- as.data.frame(vegan::scores(Ord)) 
+ 
+
+#add in the contable data above for plotting:
+rownames(plot.df.PA)->  Species.ord$Species
+rownames(plot.df.PA) -> plot.df.PA$Species
+newDF <- left_join(Species.ord, plot.df.PA, by="Species")
+
+newDF$`2019` <- as.factor(newDF$`2019`)
+#merge contable to change species with <25% proportional plots occupied as triangle
+names(contable)[1] <- "Species"
+newDF.seed <- left_join(newDF, contable, by="Species")
+#ADD THE CONTABLE PLUG DATA
+
+plugSpp <- c("Hypericum_punctatum", "Dalea_candida", "Bromus_kalmii", "Asclepias_hirtella")
+
+newDF$plugSpp[newDF$Species %in% plugSpp] <- 0 
+
+##ADD ANOTHER COLUMN to df
+newDF.seed$shape <- ifelse(newDF.seed$prop.occ < 26 & newDF.seed$prop.occ > 0, "tri","circle")
+
+species.in.space <- 
+  ggplot(newDF.seed) +
+   geom_point(aes(NMDS1, NMDS2, color=`2019`, shape=shape), size=4)  +  theme_bw() +
+    geom_text_repel(aes(NMDS1, NMDS2, label = Species), data = newDF[newDF.seed$`2019` == "0",]) +
+  geom_text_repel(aes(NMDS1, NMDS2, label = Species), data = newDF[newDF.seed$shape == "tri",])
+
+###########################################
+###NOW ADD IN PLUG! to add the 25%?
+#######################################
+plugDat <- read.csv(file="../data/SupplmentalFile3.PlotsOccupied.csv")
+
+newDF.seed
+counts.dat <- left_join(newDF.seed, plugDat, by=c("Species" = "species"))
+#add another column for plug plot shapes:
+#total_prop is from plug plots
+counts.dat$shapePlug <- ifelse(counts.dat$total_prop < 0.26 & counts.dat$total_prop > 0, "tri","circle")
+
+species.in.space <- 
+  ggplot(newDF.seed) +
+   geom_point(aes(NMDS1, NMDS2, color=`2019`, shape=shape), size=4)  +  theme_bw() +
+    geom_text_repel(aes(NMDS1, NMDS2, label = Species), data = newDF[newDF.seed$`2019` == "0",]) +
+  geom_text_repel(aes(NMDS1, NMDS2, label = Species), data = newDF[newDF.seed$shape == "tri",]) +
+  #now add plug labels as ?purple and purple triangles:
+  #NEED a P/A 2019 plug column
+ #plus.in.spce <- ggplot(counts.dat) + 
+  geom_point(aes(NMDS1, NMDS2, color=shapePlug, shape=shapePlug), data= counts.dat, size=2)  +
+  geom_text_repel(aes(NMDS1, NMDS2, label = Species), data = counts.dat[counts.dat$shapePlug == "tri",]) +
+  geom_text_repel(aes(NMDS1, NMDS2, label = Species), data = counts.dat[counts.dat$total_counts == "0",])
+```
+

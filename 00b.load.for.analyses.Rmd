@@ -1,0 +1,167 @@
+---
+title: "00.Load.for.Analyses"
+output: html_document
+#Load all spreadsheets here and modify as needed for analsyes
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+library(picante)
+library(tidyverse)
+library(reshape2)
+```
+
+#Load and Format for Analyses: Survey Cover Data
+as.planted and 2017 seed and plug formatted together. 
+2018-2019 were formated and loaded separate.
+```{r}
+##LOAD SEED SURVEYS (This code also loads plug depending on where files)
+as.planted <- read.csv("../DATA/matrix.of.planted.species.csv", as.is = TRUE, sep = ",")
+#split(as.planted, as.planted$type) -> as.planted
+#as.planted$Seed -> as.planted
+
+subdirs <- dir("../DATA" , pattern="+_VegetationCover", full=TRUE)
+myFiles <- list.files(path = subdirs, pattern="COVER", full=TRUE)
+R <- lapply(myFiles, FUN=read.csv, header=TRUE)
+df = do.call(rbind, R) #args is one argument
+df <- rbind(as.planted, df)
+
+as.factor(df$year) -> df$year
+#Add replicate, change PhyD/FD codes
+code <- read.csv(file ="../DATA/plot.PD.codes.csv", as.is = TRUE, sep=",") 
+strsplit(code$rep, ".", fixed = TRUE) -> new.rep
+sapply(new.rep, "[", 2) -> code$new.rep
+code$phyD <-  data.frame(phyD = substr(code$Code,1,1)) 
+unlist(code$phyD) -> code$phyD
+code$fd <-  data.frame(fd = substr(code$Code,2,2)) 
+unlist(code$fd) -> code$fd
+df.na <- merge(df, code[, c("plot", "new.rep", "phyD", "fd")], by="plot") 
+#Reorder columns for plot is first and year is second:
+df.na <- df.na %>%
+      dplyr::select(plot, type, year, phyD, fd, new.rep, everything())
+
+factor(df.na$phyD, levels = c('L', 'M', 'H')) -> df.na$phyD
+
+#drop as.planted matrix to make df.cover
+df.cover <- subset(df.na, !(year == "2016"))
+df.cover.na <- df.cover #keep an NA copy
+df.cover[is.na(df.cover)] <- 0 #replace NAs with 0:
+
+```
+
+###Convert Cover Data to Presence/Absence Data
+```{r}
+df.na -> df.pa #copy and convert
+#convert remaining cover to presence/absence:
+df.pa[is.na(df.pa)] <- 0 #replace NAs 
+df.PA <- decostand(x=df.pa[8:ncol(df.pa)], method="pa") #
+df.PA <- cbind(df.pa[,1:7], df.PA) #add meta back 
+#make a df without Spring: keeping the default to INCLUDE spring species
+#remove spring species
+#######
+dfPA <- split(df.PA, df.PA$type)
+df.pa.seed <- dfPA$Seed
+```
+
+
+##Maximum for PD metrics
+```{r}
+files.current <- list.files(path = "../DATA/2018_VegetationCover", pattern="RAW.sppCovMat.2018", full=TRUE)
+dat.current <- lapply(files.current, FUN=read.csv, header=TRUE)
+dat = do.call(rbind, dat.current) #args is one argument
+
+#file_name <- basename(files.current)[1]
+#gsub(".csv", "", file_name) -> file_name #dtop the .csv
+#gsub("^.*?\\.","", file_name) -> file_name
+#gsub("^.*?\\.","", file_name) -> file_name
+#sub("^([^.]*.[^.]*).*", "\\1", file_name) -> date
+
+A <- read.csv(file="../DATA/2019_VegetationCover/archive/RAW.sppCovMat.2019.06.plug.csv")
+B <- read.csv(file="../DATA/2019_VegetationCover/archive/RAW.sppCovMat.2019.09.Plug.csv")
+
+dat <- rbind(A,B)
+dat$plot <- as.factor(dat$plot)
+dat[is.na(dat)] <- 0 #replace NAs 
+
+dat.max <- dat %>%
+  group_by(plot) %>%
+  group_by_at(vars(one_of(names(select_if(dat, negate(is.numeric)))))) %>%
+  summarise_if(is.numeric, max)
+
+#make NAs =0
+
+write.csv(dat.max, file="../DATA/2019_VegetationCover/RAW.sppCovMat.2019.MAX.plug.csv")
+#
+
+
+```
+
+
+#Compositional Cover Data - Maximum cover values for 2018 and 2019 sampling
+```{r}
+#Select maximum cover value for 2018
+#sppCovMat18.09 <- read.csv(file= "../DATA/2018_VegetationCover/COVER.sppCovMat.2018.09.Seed.csv", as.is = TRUE) 
+#sppCovMat18.05 <- read.csv(file= "../DATA/2018_VegetationCover/COVER.sppCovMat.2018.05.Seed.csv")
+#sppCovMat18.09 <- read.csv(file= "../DATA/PlugPlots/COVER.sppCovMat.2018.09.Plug.csv", as.is = TRUE) 
+#sppCovMat18.05 <- read.csv(file= "../DATA/PlugPlots/COVER.sppCovMat.2018.05.Plug.csv", as.is = TRUE)
+
+#sppCovMat18.Max <- rbind(sppCovMat18.05, sppCovMat18.09) 
+#sppCovMat18.Max <- subset(sppCovMat18.Max, select=-year)
+#sppCovMat18.Max[order(as.factor(sppCovMat18.Max$plot)),] -> sppCovMat18.Max #reorder df by plot:
+#as.factor(sppCovMat18.Max$plot) -> sppCovMat18.Max$plot 
+#sppCovMat18.Max.plug <- sppCovMat18.Max %>% #REPLACE SEED AND PLUG TO COMBINE
+#  group_by_at(vars(one_of(names(select_if(sppCovMat18.Max,negate(is.numeric)))))) %>%
+#  summarise_if(is.numeric, max)
+
+#rbind(sppCovMat18.Max.seed, sppCovMat18.Max.plug) -> sppCovMat18.Max
+#write.csv(sppCovMat18.Max, file= "../DATA/sppCovMat18.Max.csv")
+
+#2019
+#sppCovMat2019.06 <- read.csv(file= "../DATA/2019_VegetationCover/COVER.sppCovMat.2019.06.Seed.csv", as.is = TRUE) #fall survey
+#sppCovMat2019.09 <- read.csv(file= "../DATA/2019_VegetationCover/COVER.sppCovMat.2019.09.Seed.csv")
+#sppCovMat2019.09 <- read.csv(file= "../DATA/PlugPlots/COVER.sppCovMat.2019.09.Plug.csv", as.is = TRUE) 
+#sppCovMat2019.06 <- read.csv(file= "../DATA/PlugPlots/COVER.sppCovMat.2019.06.Plug.csv", as.is = TRUE)
+
+#sppCovMat19.Max <- rbind(sppCovMat2019.06, sppCovMat2019.09) 
+#sppCovMat19.Max <- subset(sppCovMat19.Max, select=-year)
+#as.factor(sppCovMat19.Max$plot) -> sppCovMat19.Max$plot 
+
+#sppCovMat19.plug.Max  <- sppCovMat19.Max %>%
+#  group_by_at(vars(one_of(names(select_if(sppCovMat19.Max,negate(is.numeric)))))) %>%
+#  summarise_if(is.numeric, max)
+
+#rbind(sppCovMat19.seed.Max, sppCovMat19.plug.Max) -> sppCovMat19.Max
+#write.csv(sppCovMat19.Max, file= "../DATA/2019_VegetationCover/sppCovMat19.Max.csv")
+
+```
+
+#Chnage in cover from fall 2017 - 2018 - 2019
+```{r chnage in cover}
+# diff.cov.long for 02a.winners.losers and mvglm to 00. 
+
+df.cover.long <- reshape2::melt(df.cover.na, id.vars = c("plot","type", "year", "phyD", "fd", "new.rep","Code"), variable.name = "Species")
+df.cover.long2 <- filter(df.cover.long, value !="NA") #remove rows value = NA (keeping cover = 0) 
+
+#df.fall.cover <- subset(df.cover.long2, !(year == "2018.05"))
+##df.fall.cover <- subset(df.fall.cover,!(year=="2019.06"))
+#df.fall.cover <- df.fall.cover[order(df.fall.cover$plot),] #group by plot not species
+
+#diff.cov.long <- df.fall.cover %>%
+#  #order decending
+#    group_by(plot, Species) %>%
+#    mutate(Diff = value - lag(value, order_by = year))
+
+#split out 2018 and 2019 rows which have the change values
+#diff.cov.long.split <- split(diff.cov.long, diff.cov.long$year)
+##diff.cov.long.18 <- diff.cov.long.split$`2018.09`
+#diff.cov.long.19 <- diff.cov.long.split$`2019.09`
+
+#diff.cov.long.18 <- subset(diff.cov.long.18, select = -value) #only the 2018 and diff(%chnage)
+#diff.cov.long.19 <- subset(diff.cov.long.19, select = -value)
+
+#Make one plot per row..:
+#df.diff.wide.18 <- spread(diff.cov.long.18, Species, Diff) #correct? 144 rows..
+#df.diff.wide.19 <- spread(diff.cov.long.19, Species, Diff) #correct? 144 rows..
+
+```
+

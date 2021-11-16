@@ -18,7 +18,7 @@ datCov = do.call(rbind, R) #args is one argument
 abund.mix <- datCov
 #abund.spp <- intersect(abund.mono$sp, names(abund.mix[5:ncol(abund.mix)])) #127 checks out
 abund.mix.long <- melt(abund.mix, id.vars = c("plot", "year", "type", "Code"), variable.name = "Species")
-abund.mix.long2 <- filter(abund.mix.long, value !="NA") #drop NA columns - remove rows from df.cover.long for which value = NA (but keeping those with cover = 0)
+abund.mix.long2 <- dplyr::filter(abund.mix.long, value !="NA") #drop NA columns - remove rows from df.cover.long for which value = NA (but keeping those with cover = 0)
 names(abund.mix.long2) <- c("plot","year", "type" ,"Code","Species", "mix.cover")
 #get mean cover by species
 abund.dat <- abund.mix.long2 %>%
@@ -128,7 +128,7 @@ p
 #ggsave(filename = "../OUT/scaled.SlopePlot_seedvsplug.png", width = 8, height=16)
 #Add SD?
 
-####
+##Is there a linear relationship, sure as expected. But are there outliers?
 lm(abund.dat.year$`2019`$mean_value_seed ~ abund.dat.year$`2019`$mean_value_plug) -> fit1
 summary(fit1)
 plot(abund.dat.year$`2019`$mean_value_seed ~ abund.dat.year$`2019`$mean_value_plug)
@@ -149,13 +149,29 @@ p.diff <- p.diff + geom_text_repel(aes(fontface='italic', color = `Relative diff
                                      size = 2.5,
                                      segment.size = 0.15, show.legend = FALSE) + theme_bw()
 
+
 p.diff
+
+
+
+
+
+
+
+
+
+
 
 #########################################
 #RANK ORDER OVER TIME SERIES
 #http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html
+#test on df.cover
+
+#pick 10? species with the greatest changes in cover overtime in seed plots. Then plot 
+#those species as time series with solid line seed and dashed lines plug - label spp.
 
 theme_set(theme_bw())
+
 abund.dat -> abund.dat.copy #make copy
 abund.dat$year <- as.factor(abund.dat$year)
 #abund.dat2$logMix <- log(abund.dat2$mean_value_mix) #Log tranform cover
@@ -163,6 +179,8 @@ abund.dat$year <- as.factor(abund.dat$year)
 abund.dat$logseed <- log(abund.dat$mean_value_seed) #Log tranform cover
 abund.dat$logseed <- round(abund.dat$logseed, 2)
 
+#get diff of mean from 2017 to 2019.09
+#sort. those species with greatest change are to be plotted
 
 dat.1 <- filter(abund.dat, year == "2017" | year=="2019.09") %>% 
   group_by(Species) %>% 
@@ -183,12 +201,16 @@ abund.dat.reduced <- subset(abund.dat, Species %in% taxaList)
 abund.dat.reduced$col <- down$col[match(abund.dat.reduced$Species, down$Species[1:10])]
 abund.dat.reduced$col[is.na(abund.dat.reduced$col)] <- "green" #replace NA with green
 
+
+
 newggslopegraph(abund.dat.reduced, year, logseed, Species) +
   labs(title="logMean Cover by Species", 
        subtitle = "species with greatest abs. cover change",
        caption="2017-2019 fall surveys")
 
 ggsave(filename = "../OUT/meanSeedCover.slopePlot.png", width = 8, height=16)
+
+##REDO BASED ON LOG OR SCALED DIFFERENCES!!!
 
 ggplot(abund.dat.reduced, aes(x=year)) +                                  #try facet_wrap_paginate
   geom_line(aes(y=mean_value_seed, group=Species, colour=col), size=1) + 
@@ -201,9 +223,18 @@ ggplot(abund.dat.reduced, aes(x=year)) +                                  #try f
   #                 na.rm = TRUE)
 
 
-############################################################
-#MAKE A SLOPE PLOT PER FAMILY ##############################
 
+
+
+
+
+
+
+
+############################################################
+#MAKE A SPLOE PLOT PER FAMILY ##############################
+#using abund.dat2 could use df.mean.cover$Plug for including spring
+#spp.lookup
 copy2.Fam <- copy2
 copy2.Fam$Family.sim <- spp.trans$Family.simplified [match(copy2.Fam$Species, spp.trans$treeName)]
 copy2.Fam$Species <- as.character(copy2.Fam$Species)
@@ -256,6 +287,8 @@ print(ggplot(df.cover.Byreps, aes(x=year)) +
 }
 dev.off()
 
+
+
 #plot absolute cover by species for each  plot, colored by PhyD plot and seed vs plug line type:
 pdf("../OUT/slopeplots.perSpeciesv2.pdf")
 for(i in 1:127){
@@ -271,4 +304,40 @@ for(i in 1:127){
   scale_colour_manual(values=rep(brewer.pal(5,"Dark2"),times=130)) )
 }
 dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#make a list of species to plot (based on significance for somthing and then call that in ggplot)
+test.specieslist <- c("Agastache_nepetoides", "Agastache_scrophulariifolia")
+
+#ERRORS by plotting only 2 years not if call a species specifically as below
+ggplot(copy[copy$Species==test.specieslist,], aes(x=year)) +
+  geom_line(aes(y=logMean, col=SDMC, group=Species), size=2)+
+  labs(title="Time Series of Mean Cover", 
+       subtitle="Colored by SDMC", 
+       caption="", 
+       y="(log)Mean Cover by Species", 
+       color=NULL) 
+
+ggplot(copy[copy$Species==c("Agastache_nepetoides"),], aes(x=year)) +
+  geom_line(aes(y=logMean, col=SDMC, group=Species), size=2)+
+  labs(title="Time Series of Mean Cover", 
+       subtitle="Colored by SDMC", 
+       caption="", 
+       y="(log)Mean Cover by Species", 
+       color=NULL) 
+
 
