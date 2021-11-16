@@ -1,5 +1,4 @@
 # Prairie_SeedPlots
 
-Scripts for manuscript:
-"Early establishment of seeds, plugs, and plant communities in a biodiversity restoration experiment"
-
+Scripts for Journal of Restoration Ecology manuscript:
+"Phylogenetically and functionally diverse species mixes, whether seeded or planted, beget diverse prairie assemblages" by Barak B, Karimi N, et al.
