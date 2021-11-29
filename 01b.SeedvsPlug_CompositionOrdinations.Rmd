@@ -1,0 +1,180 @@
+---
+title: "01b.SeedvsPlugComposition"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(vegan)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(ggforce)
+```
+
+ 
+```{r}
+as.planted <- read.csv("../DATA/matrix.of.planted.species.csv", as.is = TRUE, sep = ",") #seed and plug
+comp <- read.csv("../DATA/2019_VegetationCover/COVER.sppCovMat.2019.MAX.csv")
+
+comp <- rbind(as.planted, comp)
+comp.df <- as.matrix((subset(comp, select = Agalinis_tenuifolia:Zizia_aurea)))
+comp.df[is.na(comp.df)] <- 0 #replace NAs 
+comp.df -> cov.df
+comp.df <- decostand(x=comp.df, method="pa") #convert to P/A
+
+mds <- metaMDS(comp.df, k=2, maxit=40000, distance = 'jaccard', autotransform = TRUE, trymax=200)
+mds <- metaMDS(comp.df, distance = "jaccard", k=3, maxit=100000, previous.best=mds, autotransform = TRUE, trymax=200) 
+#stressplot(mds) 0.2280478
+```
+
+
+```{r}
+year <- as.factor(comp$year)
+plot<-comp$plot
+type <- comp$type
+nmds_Ccomp <- as.data.frame(vegan::scores(mds)) 
+mnds <- cbind(nmds_Ccomp, comp[,1:4])
+mnds$type <- as.factor(mnds$type)
+factor(mnds$type, levels = c('Seed', 'Plug')) -> mnds$type
+dis <- vegdist(comp.df, distance = 'jaccard') #default is bray this is PA data
+groups <- as.factor(mnds$type)
+## Calculate multivariate dispersions
+mod <- betadisper(dis, groups)
+mod
+## Permutation test for F
+permutest(mod, pairwise = TRUE, permutations = 999)
+
+```
+
+```{r}
+#mnds %>% 
+  # arrange(plot) %>% #sort ascending so that 2019.09 is plotted last
+  #arrange(year) %>%
+PAOrdPlot <- ggplot(subset(mnds, year %in% c("2016"))) + geom_point(aes(NMDS1, NMDS2), color="grey") + stat_ellipse(aes(x=NMDS1,  y=NMDS2), color="grey")    +
+#now add other points and ellipse:
+  geom_point(data=subset(mnds, year != "2016"), aes(NMDS1, NMDS2, color=type)) +
+   stat_ellipse(data=subset(mnds, year != "2016"), aes(NMDS1, NMDS2, group=type, color=type)) +
+  geom_path(data=mnds, aes(x = NMDS1, y = NMDS2, group = interaction(type, plot)), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  theme_classic() +
+theme(legend.position = "none")  
+  
+
+------------------
+#now facet by PhyD
+ggplot(subset(mnds, year %in% c("2016"))) + geom_point(aes(NMDS1, NMDS2), color="grey") + stat_ellipse(aes(x=NMDS1,  y=NMDS2), color="grey")    +
+#now add other points and ellipse:
+  geom_point(data=subset(mnds, year != "2016"), aes(NMDS1, NMDS2, color=type)) +
+   stat_ellipse(data=subset(mnds, year != "2016"), aes(NMDS1, NMDS2, group=type, color=type)) +
+  geom_path(data=mnds, aes(x = NMDS1, y = NMDS2, group = interaction(type, plot)), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  theme_classic() +
+theme(legend.position = "none") + facet_wrap(~Code, ncol=2)
+
+#########COLOR BY PD###########################
+######################################################
+mnds$phyD <-  data.frame(phyD = substr(mnds$Code,1,1)) 
+unlist(mnds$phyD) -> mnds$phyD
+factor(mnds$phyD, levels = c('L', 'M', "H")) -> mnds$phyD
+
+PACOmpOrd <- ggplot(subset(mnds, year %in% c("2016"))) + geom_point(aes(NMDS1, NMDS2), color="black") + stat_ellipse(aes(x=NMDS1,  y=NMDS2), color="black")    +
+#now add other points and ellipse and color by FD:
+  geom_point(data=subset(mnds, year != "2016"), aes(NMDS1, NMDS2, color=interaction(type))) +
+   geom_mark_ellipse(data=subset(mnds, year != "2016"), aes(NMDS1, NMDS2, group=interaction(type, phyD), color=type)) +
+  theme_bw() + facet_grid(~phyD) + theme(legend.title = element_blank())
++
+  scale_color_manual(values=c('grey80', "darkslategray3",  'grey80', "darkslategray3", 'grey80', "darkslategray3")) +
+  theme_bw() + facet_grid(~phyD) + theme(legend.position = "none")
+  
+```
+
+##Cover
+```{r}
+
+###NEED 2017 cover not as planted!!!
+seed2017 <- read.csv("../DATA/2017_VegetationCover/COVER.sppCovMat2017.SEED.csv")
+plug2017 <- read.csv("../DATA/PlugPlots/COVER.sppCovMat2017.PLUG.csv")
+yr2019 <- read.csv("../DATA/2019_VegetationCover/COVER.sppCovMat.2019.MAX.csv")
+#plug2019 <- read.csv("../DATA/PlugPlots/COVER.sppCovMat.2019.09.Plug.csv")
+
+cov <- rbind(seed2017, plug2017, yr2019)
+cov.df <- as.matrix((subset(cov, select = Agalinis_tenuifolia:Zizia_aurea)))
+cov.df[is.na(cov.df)] <- 0 #replace NAs 
+
+#cov.dist <- vegdist(cov.df, method="bray")
+Cov.mds <- metaMDS(cov.df, k=2, maxit=20000, distance = 'bray', autotransform = TRUE, trymax=100)
+Cov.mds <- metaMDS(cov.df, distance = "bray", k=3, maxit=90000, previous.best=Cov.mds, autotransform = TRUE, trymax=200) 
+#stress 0.23
+nmds_Cov <- as.data.frame(vegan::scores(Cov.mds)) 
+ord <- cbind(nmds_Cov, cov[,1:4])
+ord$year <- as.factor(ord$year)
+ord$type <- as.factor(ord$type)
+factor(ord$type, levels = c('Seed', 'Plug')) -> ord$type
+
+#PERMANOVA ON SEED VS PLUG from final survey
+#cov <- rbind(seed2017, plug2017, yr2019)
+final <- as.matrix((subset(yr2019, select = Agalinis_tenuifolia:Zizia_aurea)))
+final[is.na(final)] <- 0 #replace NAs 
+#cov.dist <- vegdist(cov.df, method="bray")
+yr2019$type -> plottype
+adonis2(final ~ plottype, method="bray")
+#anosim(final)
+
+CovOrdPlot <- ggplot(subset(ord, year %in% c("2017"))) + geom_point(aes(NMDS1, NMDS2), color="grey") + stat_ellipse(aes(x=NMDS1,  y=NMDS2), color="grey")    +
+#now add other points and ellipse:
+  geom_point(data=subset(ord, year != "2017"), aes(NMDS1, NMDS2, color=type)) +
+   stat_ellipse(data=subset(ord, year != "2017"), aes(NMDS1, NMDS2, group=type, color=type)) +
+  geom_path(data=ord, aes(x = NMDS1, y = NMDS2, group = interaction(type, plot)), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  theme_classic() + theme(legend.position = "none")
+
+ords <- cowplot::plot_grid(PAOrdPlot,CovOrdPlot, labels="auto", ncol =2)
+
+#now by Code
+ggplot(subset(ord, year %in% c("2017"))) + geom_point(aes(NMDS1, NMDS2), color="grey") + stat_ellipse(aes(x=NMDS1,  y=NMDS2), color="grey")    +
+#now add other points and ellipse:
+  geom_point(data=subset(ord, year != "2017"), aes(NMDS1, NMDS2, color=type)) +
+   stat_ellipse(data=subset(ord, year != "2017"), aes(NMDS1, NMDS2, group=type, color=type)) +
+  geom_path(data=ord, aes(x = NMDS1, y = NMDS2, group = interaction(type, plot)), arrow = arrow(length = unit(0.15, "cm")), color="grey") +
+  theme_classic() + theme(legend.position = "none") + facet_wrap(~Code, ncol=2)
+
+```
+
+```{r}
+
+legend1 <- get_legend(CovOrdPlot)
+
+cowplot::plot_grid(PAOrdPlot, CovOrdPlot + theme(legend.position="none"), legend1, labels=c("a", "b", ""), rel_widths = c(1,1,0.4), nrow=1) -> OrdPlots
+OrdPlots
+#ggsave(OrdPlots, file="../OUT/Fig.Ordinations.png")
+#ggsave(OrdPlots, file="../OUT/Fig.Ordinations.pdf")
+```
+
+#Color by FD or Phyd
+```{r}
+mnds$phyD <-  data.frame(phyD = substr(mnds$Code,1,1)) 
+unlist(mnds$phyD) -> mnds$phyD
+mnds$fd <-  data.frame(fd = substr(mnds$Code,2,2)) 
+unlist(mnds$fd) -> mnds$fd
+
+ggplot(subset(mnds, year %in% c("2016"))) + geom_point(aes(NMDS2, NMDS3), color="grey") + stat_ellipse(aes(x=NMDS2,  y=NMDS3), color="grey")    +
+  
+#now add other points and ellipse and color by FD:
+  geom_point(data=subset(mnds, year != "2016"), aes(NMDS2, NMDS3, color=interaction(type, fd))) +
+   stat_ellipse(data=subset(mnds, year != "2016"), aes(NMDS2, NMDS3, group=interaction(type, fd), color=interaction(type, fd))) +
+  theme_classic()  
+
+###ord for cover
+ord$phyD <-  data.frame(phyD = substr(ord$Code,1,1)) 
+unlist(ord$phyD) -> ord$phyD
+ord$fd <-  data.frame(fd = substr(ord$Code,2,2)) 
+unlist(ord$fd) -> ord$fd
+
+ggplot(subset(ord, year %in% c("2017"))) + geom_point(aes(NMDS1, NMDS2), color="grey") + stat_ellipse(aes(x=NMDS1,  y=NMDS2), color="grey")    +
+#now add other points and ellipse and color by FD:
+  geom_point(data=subset(ord, year != "2017"), aes(NMDS1, NMDS2, color=interaction(type, phyD))) +
+   stat_ellipse(data=subset(ord, year != "2017"), aes(NMDS1, NMDS2, group=interaction(type, phyD), color=interaction(type, phyD))) +
+  theme_classic()  
+  
+
+``` 
+
+
